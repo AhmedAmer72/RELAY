@@ -1,0 +1,24 @@
+{
+  "product": "RELAY",
+  "contract": "RelayEscrow",
+  "network": "mezo-testnet",
+  "chainId": 31611,
+  "address": "0xcf6a53b0A22989Ad6B1834C7844CfB9B0d3A9125",
+  "musd": "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
+  "musdName": "Mezo USD",
+  "musdSymbol": "MUSD",
+  "musdDecimals": 18,
+  "deployer": "0x39B6fd99d31A67475911D9d763B0Bd8323f99685",
+  "deployTx": "0xe4662d287f68eacc0a2ad57f08e9bef0bc33e1b87898941ddaf25ef97fb30828",
+  "blockNumber": 16358867,
+  "compiler": "0.8.28",
+  "evmVersion": "london",
+  "optimizer": {
+    "enabled": true,
+    "runs": 200
+  },
+  "viaIR": true,
+  "deployedAt": "2026-10-25T11:00:01.950Z",
+  "explorerAddress": "https://explorer.test.mezo.org/address/0xcf6a53b0A22989Ad6B1834C7844CfB9B0d3A9125",
+  "explorerTx": "https://explorer.test.mezo.org/tx/0xe4662d287f68eacc0a2ad57f08e9bef0bc33e1b87898941ddaf25ef97fb30828"
+}
