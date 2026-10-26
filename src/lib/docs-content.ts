@@ -107,11 +107,12 @@ export const DOC_SECTIONS = [
   {
     id: "x402",
     title: "Machine-readable checkout",
-    lead: "GET /api/x402/agreements/{id} is a status endpoint for the agreement. It is not a way to send MUSD by itself.",
+    lead: "Another app can read the invoice, ask its own wallet to sign, and POST that signed transaction here. RELAY broadcasts it and accepts it only after the receipt.",
     points: [
-      "While the agreement is still awaiting funds and the funding deadline has not passed, the response is HTTP 402 with the amount, asset, and fund instruction.",
-      "After that, the response is HTTP 200 with the on-chain receipt: state, amount, parties, hashes, and links to the checkout and receipt pages.",
-      "An unknown id returns 404. A direct token transfer to the escrow still does not fund an agreement.",
+      "While funding is open, GET /api/x402/agreements/{id} returns HTTP 402 with the MUSD amount and the exact approve and fundEscrow calldata.",
+      "POST /api/x402/agreements/{id}/settle takes that signed transaction, or a tx hash, and checks that it approves this escrow or funds this agreement.",
+      "A successful fund is reported only when the receipt succeeded and the agreement is no longer awaiting funds.",
+      "The 402 also points at the Mezo testnet app, where the buyer borrows or swaps into MUSD. A direct transfer to the escrow is still rejected.",
     ],
   },
   {

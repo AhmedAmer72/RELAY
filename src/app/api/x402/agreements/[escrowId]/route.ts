@@ -1,51 +1,15 @@
-import { createPublicClient, http } from "viem";
-import { getAppChain, getEscrowAddresses, getMusdConfig } from "@/lib/chain/config";
-import { relayEscrowAbi } from "@/lib/contracts/relayEscrowAbi";
-import { coerceRawEscrow, parseEscrow } from "@/lib/escrow/parse";
+import { getAppChain, OFFICIAL_LINKS } from "@/lib/chain/config";
+import { loadAgreement, x402Client } from "@/lib/x402/load-agreement";
+import { paymentCalls } from "@/lib/x402/payment";
 
 export const dynamic = "force-dynamic";
 
-const client = createPublicClient({
-  chain: getAppChain(),
-  transport: http(getAppChain().rpcUrls.default.http[0]),
-});
-
 export async function GET(request: Request, context: { params: Promise<{ escrowId: string }> }) {
   const { escrowId } = await context.params;
-  if (!/^[1-9]\d*$/.test(escrowId)) {
-    return Response.json({ error: "Agreement id is not valid." }, { status: 400 });
-  }
-  const contracts = getEscrowAddresses();
-  const musd = getMusdConfig();
-  if (contracts.length === 0 || !musd.address) {
-    return Response.json({ error: "The escrow contract is not configured." }, { status: 503 });
-  }
+  const loaded = await loadAgreement(escrowId);
+  if ("error" in loaded) return Response.json({ error: loaded.error }, { status: loaded.status });
 
-  let model;
-  let escrowAddress = contracts[0];
-  let found = false;
-  for (const address of contracts) {
-    try {
-      const raw = await client.readContract({
-        address,
-        abi: relayEscrowAbi,
-        functionName: "getEscrow",
-        args: [BigInt(escrowId)],
-      });
-      model = parseEscrow(BigInt(escrowId), coerceRawEscrow(raw));
-      escrowAddress = address;
-      found = true;
-      break;
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      if (text.includes("EscrowNotFound")) continue;
-      return Response.json({ error: "The agreement could not be read from the network." }, { status: 503 });
-    }
-  }
-  if (!found || !model) {
-    return Response.json({ error: "That agreement was not found on the escrow contract." }, { status: 404 });
-  }
-
+  const { model, escrow, musd } = loaded;
   const origin = new URL(request.url).origin;
   const checkoutUrl = `${origin}/checkout/${escrowId}`;
   const receipt = {
@@ -53,9 +17,9 @@ export async function GET(request: Request, context: { params: Promise<{ escrowI
     agreementId: model.id.toString(),
     state: model.state,
     amount: model.amount.toString(),
-    asset: musd.address,
+    asset: musd,
     network: `eip155:${getAppChain().id}`,
-    escrow: escrowAddress,
+    escrow,
     seller: model.seller,
     buyer: model.buyer,
     resolver: model.resolver,
@@ -65,12 +29,14 @@ export async function GET(request: Request, context: { params: Promise<{ escrowI
     receiptUrl: `${origin}/receipt/${escrowId}`,
   };
 
-  const block = await client.getBlock();
+  const block = await x402Client().getBlock();
   const fundingOpen = model.state === "Created" && Number(block.timestamp) <= model.fundingDeadline;
   if (!fundingOpen) {
     return Response.json(receipt, { status: 200, headers: { "cache-control": "no-store" } });
   }
 
+  const calls = paymentCalls(escrow, musd, model.id, model.amount);
+  const settleUrl = `${origin}/api/x402/agreements/${escrowId}/settle`;
   const requirements = {
     x402Version: 2,
     error: "Payment required",
@@ -83,18 +49,26 @@ export async function GET(request: Request, context: { params: Promise<{ escrowI
       {
         scheme: "relay-escrow",
         network: `eip155:${getAppChain().id}`,
-        asset: musd.address,
+        asset: musd,
         amount: model.amount.toString(),
+        payTo: escrow,
         extra: {
-          escrow: escrowAddress,
+          escrow,
           escrowId,
-          approve: "erc20.approve",
-          settle: "fundEscrow",
-          checkoutUrl,
-          note: "Do not transfer MUSD directly to the escrow contract. Direct transfers are not credited to an agreement. Approve the exact amount, then call fundEscrow.",
+          calls,
+          mezo: {
+            borrowOrSwap: "https://testnet.mezo.org",
+            borrowDocs: OFFICIAL_LINKS.borrow,
+          },
+          note: "Sign approve, then sign fundEscrow or fundEscrowAsAgent. POST the signed transaction to settle. A direct MUSD transfer is not accepted.",
         },
       },
     ],
+    settle: {
+      method: "POST",
+      url: settleUrl,
+      accepts: ["signedTransaction", "txHash"],
+    },
     relay: receipt,
   };
   return new Response(JSON.stringify(requirements), {
