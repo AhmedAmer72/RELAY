@@ -1,7 +1,7 @@
 "use client";
 
 import { FAQ, HOW_STEPS } from "@/lib/content";
-import { addAppChain, OFFICIAL_LINKS, VERIFIED_TESTNET, explorerAddressUrl, getAppChain, getChainEnv, getDeployBlock, getEscrowConfig, getMusdConfig, getRpcUrl } from "@/lib/chain/config";
+import { addAppChain, OFFICIAL_LINKS, VERIFIED_TESTNET, explorerAddressUrl, getAppChain, getEscrowConfig, getMusdConfig, getRpcUrl } from "@/lib/chain/config";
 import { APP_VERSION } from "@/lib/version";
 import { AUTO_RELEASE_DISCLOSURE, RESOLVER_DISCLOSURE } from "@/lib/escrow/constants";
 import { useState, type ReactNode } from "react";
@@ -64,56 +64,6 @@ export function HowItWorksScreen() {
           </details>
         ))}
       </div>
-    </div>
-  );
-}
-
-export function DocsScreen() {
-  const escrow = getEscrowConfig();
-  const musd = getMusdConfig();
-  return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h1 className="display-title">Documentation</h1>
-        <p className="mt-3 text-muted">The contract holds the funds and the status.</p>
-      </div>
-      <Card>
-        <h2 className="font-semibold">State machine</h2>
-        <pre className="mt-3 overflow-x-auto text-xs text-muted">{`Created -> Funded -> Delivered -> Released
-Created -> Cancelled
-Funded -> Refunded
-Delivered -> Disputed -> Released | Refunded | Split`}</pre>
-        <p className="mt-3 text-sm text-muted">Released, Refunded, Cancelled, and Split are final. Split and agent budgets appear only when this contract supports them.</p>
-      </Card>
-      <Card>
-        <h2 className="font-semibold">Machine-readable checkout</h2>
-        <p className="mt-3 text-sm text-muted">GET /api/x402/agreements/&#123;id&#125; returns 402 while funding is open, then the receipt. Direct MUSD transfers do not fund an agreement.</p>
-      </Card>
-      <Card>
-        <h2 className="font-semibold">This deployment</h2>
-        <dl className="mt-3 space-y-2 text-sm">
-          <Row label="Network" value={getChainEnv() === "local" ? "Local Hardhat" : VERIFIED_TESTNET.name} />
-          <Row label="Chain ID" value={String(getAppChain().id)} />
-          <Row label="MUSD" value={musd.address ?? musd.error ?? "Not configured"} />
-          <Row label="Escrow" value={escrow.address ?? "Not configured"} />
-          <Row label="Deploy block" value={getDeployBlock()?.toString() ?? "Not set"} />
-        </dl>
-        <div className="mt-4 space-y-2 text-sm">
-          <p><ExternalLink href={OFFICIAL_LINKS.contracts}>Official token address reference</ExternalLink></p>
-          <p><ExternalLink href={OFFICIAL_LINKS.network}>Official network configuration</ExternalLink></p>
-          <p><ExternalLink href={OFFICIAL_LINKS.musdQuickstart}>Testnet MUSD quickstart</ExternalLink></p>
-        </div>
-      </Card>
-      <Card>
-        <h2 className="font-semibold">Limitations</h2>
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted">
-          <li>The contract has not been independently audited.</li>
-          <li>Evidence is a note or URL plus a hash.</li>
-          <li>Direct transfers to the contract are not credited and cannot be rescued.</li>
-          <li>There is no admin key that can withdraw user funds.</li>
-          <li>Mainnet transactions are disabled.</li>
-        </ul>
-      </Card>
     </div>
   );
 }

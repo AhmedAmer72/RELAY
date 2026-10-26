@@ -88,7 +88,7 @@ export default function HeroSectionwithPixelBackground() {
           transition={{ duration: 0.6, delay: 0.52, ease: "easeOut" }}
           className="mt-8 max-w-md text-center text-sm leading-relaxed text-muted sm:mt-10 sm:text-base"
         >
-          Payments that follow the agreement. Fund MUSD with a delivery deadline, a review window, and a contract that holds the money.
+          A seller sets the terms. The buyer funds MUSD into escrow. Release, refund, dispute, and split follow the deadlines on that agreement.
         </motion.p>
 
         <motion.div
