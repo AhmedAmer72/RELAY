@@ -3,6 +3,8 @@ import { DOC_LIMITATIONS, DOC_SECTIONS, DOC_STATES } from "@/lib/docs-content";
 import { OFFICIAL_LINKS, VERIFIED_TESTNET, explorerAddressUrl, getAppChain, getChainEnv, getDeployBlock, getEscrowAddresses, getEscrowConfig, getMusdConfig } from "@/lib/chain/config";
 import { ExternalLink } from "@/components/ui";
 
+const PITCH_DECK_FILE = "/pitch/RELAY_Mezo_Buildathon_Pitch_Deck.pptx";
+
 export function DocsScreen() {
   const escrow = getEscrowConfig();
   const musd = getMusdConfig();
@@ -18,6 +20,9 @@ export function DocsScreen() {
       <nav aria-label="Documentation sections" className="mb-8 lg:sticky lg:top-24 lg:mb-0">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">On this page</p>
         <ol className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+          <li className="shrink-0">
+            <a href="#pitch-deck" className="block rounded-full px-3 py-1.5 text-sm font-semibold text-[#163300] hover:bg-[#f3f8ea] lg:rounded-2xl">Pitch deck</a>
+          </li>
           {DOC_SECTIONS.map((section, index) => (
             <li key={section.id} className="shrink-0">
               <a href={`#${section.id}`} className="block rounded-full px-3 py-1.5 text-sm font-semibold text-[#163300] hover:bg-[#f3f8ea] lg:rounded-2xl">
@@ -59,6 +64,16 @@ export function DocsScreen() {
             <Link className="rounded-full bg-[#f3f8ea] px-3 py-1.5 text-brand" href="/settings">Network</Link>
           </div>
         </header>
+
+        <section id="pitch-deck" className="scroll-mt-28 rounded-[28px] border-2 border-[#163300] bg-[#f3f8ea] p-5 target:ring-4 target:ring-meadow sm:p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">Mezo Buildathon</p>
+          <h2 className="mt-1 text-xl font-semibold">Pitch deck</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">Ten slides for the testnet checkout: the problem, the escrow rules, what is live, and the next wave. The file is the PowerPoint deck in this project.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <a href={PITCH_DECK_FILE} className="inline-flex min-h-11 items-center justify-center rounded-full bg-brand px-5 text-sm font-semibold text-white">Open pitch deck</a>
+            <a href={PITCH_DECK_FILE} download className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[#163300] bg-white px-5 text-sm font-semibold text-[#163300]">Download .pptx</a>
+          </div>
+        </section>
 
         {DOC_SECTIONS.map((section, index) => (
           <section id={section.id} key={section.id} className="scroll-mt-28 rounded-[28px] border border-line bg-white p-5 target:border-[#163300] target:ring-4 target:ring-meadow sm:p-6">

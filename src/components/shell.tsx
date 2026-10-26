@@ -22,6 +22,8 @@ const GUIDE_LINKS = [
   { href: "/docs", label: "Docs", icon: "doc" },
 ] as const;
 
+const PITCH_DECK_HREF = "/docs#pitch-deck";
+
 const MOBILE_LINKS = [
   { href: "/dashboard", label: "Home", icon: "grid" },
   { href: "/create", label: "Create", icon: "plus" },
@@ -160,12 +162,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href="/" aria-label="RELAY home" className="shrink-0"><Logo /></Link>
           <nav className="hidden min-w-0 flex-1 justify-center lg:flex" aria-label="Primary">
             {home ? (
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-4">
                 {GUIDE_LINKS.map((item) => (
                   <Link key={item.href} href={item.href} className="text-sm font-semibold text-[#163300] underline-offset-4 hover:underline hover:decoration-meadow hover:decoration-2">
                     {item.label}
                   </Link>
                 ))}
+                <a href={PITCH_DECK_HREF} className="inline-flex min-h-9 items-center justify-center rounded-full border-2 border-[#163300] bg-white px-4 text-sm font-semibold text-[#163300] hover:bg-[#f3f8ea]">Pitch deck</a>
               </div>
             ) : (
               <DesktopNav links={links} pathname={pathname} />
@@ -182,19 +185,25 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
       {checkout ? null : (
         <nav ref={tabRef} className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-[#163300] bg-[#f3f8ea] lg:hidden" aria-label="Mobile">
-          <ul className={cn("grid", inApp ? "grid-cols-5" : "grid-cols-3")}>
+          <ul className={cn("grid", inApp ? "grid-cols-5" : "grid-cols-4")}>
             {(inApp
               ? MOBILE_LINKS
-              : [...GUIDE_LINKS, { href: "/dashboard", label: "Launch", icon: "plus" }]
+              : [...GUIDE_LINKS, { href: PITCH_DECK_HREF, label: "Pitch", icon: "doc" }, { href: "/dashboard", label: "Launch", icon: "plus" }]
             ).map((item) => {
-              const active = pathname.startsWith(item.href);
+              const active = !item.href.includes("#") && pathname.startsWith(item.href);
+              const className = cn("relative flex flex-col items-center gap-1 px-1 py-2 text-[10px] font-semibold text-[#163300]/55", active && "text-[#163300]");
+              const content = (
+                <>
+                  {active ? <span className="absolute inset-x-3 top-0 h-1 rounded-b-full bg-meadow" aria-hidden /> : null}
+                  <NavIcon name={item.icon} />
+                  {item.label === "How it works" ? "Guide" : item.label}
+                </>
+              );
               return (
                 <li key={item.href}>
-                  <Link href={item.href} aria-current={active ? "page" : undefined} className={cn("relative flex flex-col items-center gap-1 px-1 py-2 text-[10px] font-semibold text-[#163300]/55", active && "text-[#163300]")}>
-                    {active ? <span className="absolute inset-x-3 top-0 h-1 rounded-b-full bg-meadow" aria-hidden /> : null}
-                    <NavIcon name={item.icon} />
-                    {item.label === "How it works" ? "Guide" : item.label}
-                  </Link>
+                  {item.href.includes("#")
+                    ? <a href={item.href} className={className}>{content}</a>
+                    : <Link href={item.href} aria-current={active ? "page" : undefined} className={className}>{content}</Link>}
                 </li>
               );
             })}
