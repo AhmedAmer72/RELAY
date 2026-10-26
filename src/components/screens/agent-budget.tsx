@@ -14,7 +14,8 @@ import Link from "next/link";
 import type { TxPhase } from "@/lib/escrow/types";
 
 function isBusy(phase: TxPhase, prefix: string) {
-  return phase.phase !== "idle" && phase.action.startsWith(prefix);
+  const pending = phase.phase === "preparing" || phase.phase === "awaiting_wallet" || phase.phase === "submitted" || phase.phase === "confirming";
+  return pending && phase.action.startsWith(prefix);
 }
 
 export function AgentBudgetPanel() {
@@ -70,7 +71,7 @@ export function AgentBudgetPanel() {
       functionName: "approve",
       args: [escrow, next],
     }), async () => {
-      await approval.refetch();
+      void approval.refetch();
     });
   }
 
@@ -92,7 +93,7 @@ export function AgentBudgetPanel() {
       functionName: "setAgentAllowance",
       args: [agentAddress, parsed.amount],
     }), async () => {
-      await current.refetch();
+      void current.refetch();
     });
   }
 
