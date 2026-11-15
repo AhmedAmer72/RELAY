@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
-import type { Address, Hex } from "viem";
+import { createPublicClient, webSocket, type Address, type Hex } from "viem";
 import { describeEvent, type ChainEvent } from "@/lib/chain/logs";
-import { escrowPath, explorerTxUrl, getEscrowConfig } from "@/lib/chain/config";
+import { escrowPath, explorerTxUrl, getEscrowAddresses, getEscrowConfig, mezoTestnet } from "@/lib/chain/config";
 import { formatTimestamp } from "@/lib/escrow/time";
 import { useProtocol } from "@/hooks/use-escrow";
 import { Button, Card, CopyButton, EmptyState, ErrorPanel, ExternalLink, Field, FilterChip, Skeleton, controlClass } from "@/components/ui";
@@ -69,11 +69,29 @@ export function ActivityScreen() {
   const [hookSecret, setHookSecret] = useState("");
   const [hookError, setHookError] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
+  const [live, setLive] = useState<"connecting" | "live" | "disconnected">("connecting");
   const [page, setPage] = useState(0);
   const items = (events.data?.items ?? []).filter((event) => filter === "all" || event.name === filter);
   const pageSize = 20;
   const visible = items.slice(page * pageSize, page * pageSize + pageSize);
   const pages = Math.max(1, Math.ceil(items.length / pageSize));
+
+  const refetchActivity = events.refetch;
+  useEffect(() => {
+    let stop = () => {};
+    const client = createPublicClient({ chain: mezoTestnet, transport: webSocket("wss://rpc-ws.test.mezo.org") });
+    client.getBlockNumber().then(() => setLive("live")).catch(() => setLive("disconnected"));
+    try {
+      stop = client.watchEvent({
+        address: getEscrowAddresses(),
+        onLogs: () => { void refetchActivity(); },
+        onError: () => setLive("disconnected"),
+      });
+    } catch {
+      setLive("disconnected");
+    }
+    return () => stop();
+  }, [refetchActivity]);
 
   return (
     <div className="space-y-6">
@@ -81,7 +99,7 @@ export function ActivityScreen() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">Network</p>
           <h1 className="display-title mt-1">Activity</h1>
-          <p className="mt-2 text-sm text-muted">On-chain events only.</p>
+          <p className="mt-2 text-sm text-muted">On-chain events only. {live === "live" ? "The websocket feed is connected." : live === "disconnected" ? "The live feed is disconnected. The saved index is still shown." : "Connecting to the live feed."}</p>
         </div>
         {events.isFetching && !events.isLoading ? (
           <span className="inline-flex items-center gap-2 text-xs font-semibold text-faint"><span className="live-dot" aria-hidden />Updating</span>

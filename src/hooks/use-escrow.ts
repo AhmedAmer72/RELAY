@@ -235,6 +235,8 @@ export function panelFor(
     reviewExtension?: boolean;
     extensionProposer?: Address;
     extensionDeadline?: number;
+    permitFunding?: boolean;
+    permit2Allowance?: bigint;
   },
 ) {
   return evaluateEscrow({
@@ -262,5 +264,7 @@ export function panelFor(
     reviewExtension: extra?.reviewExtension,
     extensionProposer: extra?.extensionProposer,
     extensionDeadline: extra?.extensionDeadline,
+    permitFunding: extra?.permitFunding,
+    permit2Allowance: extra?.permit2Allowance,
   });
 }

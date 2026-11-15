@@ -15,6 +15,8 @@ export type PolicyInput = {
   symbol?: string;
   balance?: bigint;
   allowance?: bigint;
+  permitFunding?: boolean;
+  permit2Allowance?: bigint;
   nativeBalance?: bigint;
   partialSettlement?: boolean;
   agentAllowance?: bigint;
@@ -159,6 +161,20 @@ export function evaluateEscrow(input: PolicyInput): PanelModel {
         notices.push("Funding stays off until the requirement above is met.");
       } else if (input.balance < escrow.amount) {
         notices.push("You do not have enough MUSD to fund this invoice.");
+      } else if (input.permitFunding && (input.permit2Allowance === undefined || input.permit2Allowance < escrow.amount)) {
+        setPrimary(action({
+          id: "allow-permit2",
+          label: "Allow Permit2 once",
+          description: "Lets Permit2 move MUSD. This is not an approval of the escrow.",
+          tone: "primary",
+        }));
+      } else if (input.permitFunding) {
+        setPrimary(action({
+          id: "sign-and-fund",
+          label: "Sign and fund",
+          description: "One signature and one transaction. No separate escrow approval.",
+          tone: "primary",
+        }));
       } else if (input.allowance < escrow.amount) {
         setPrimary(action({
           id: "approve",

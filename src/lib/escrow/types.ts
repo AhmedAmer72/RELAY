@@ -34,6 +34,8 @@ export type ActionId =
   | "connect"
   | "switch-network"
   | "approve"
+  | "allow-permit2"
+  | "sign-and-fund"
   | "fund"
   | "fund-as-agent"
   | "cancel"
