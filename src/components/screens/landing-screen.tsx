@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FAQ, FEATURE_CARDS, HOW_STEPS, PRODUCT_NOTES } from "@/lib/content";
 import { FUNDS_DISCLOSURE, NO_FEE_DISCLOSURE, RESOLVER_DISCLOSURE } from "@/lib/escrow/constants";
 import { Button } from "@/components/ui";
-import HeroSectionwithPixelBackground from "@/components/ui/hero-with-pixelbackground";
+import FigmaBrandHero from "@/components/ui/figma-brand-hero";
 
 function FeatureMark({ mark }: { mark: (typeof FEATURE_CARDS)[number]["mark"] }) {
   const common = "h-24 w-24 sm:h-28 sm:w-28";
@@ -215,7 +215,7 @@ export function LandingScreen() {
   return (
     <div className="landing-root relative w-full">
       <section className="hero-screen bg-white">
-        <HeroSectionwithPixelBackground />
+        <FigmaBrandHero />
       </section>
 
       <ChaseStrip />

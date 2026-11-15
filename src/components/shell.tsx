@@ -135,6 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const links = inApp ? [...APP_LINKS, ...GUIDE_LINKS] : GUIDE_LINKS;
   const headerRef = useRef<HTMLElement>(null);
   const tabRef = useRef<HTMLElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const header = headerRef.current;
@@ -163,10 +164,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-white focus:px-3 focus:py-2">
         Skip to content
       </a>
-      <header ref={headerRef} className="sticky top-0 z-40 border-b-2 border-[#163300] bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex h-[76px] max-w-6xl items-center gap-3 px-4">
+      <header ref={headerRef} className="sticky top-0 z-40 h-16 border-b border-[#163300]/15 bg-white">
+        <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-3 px-4 sm:px-6">
           <Link href="/" aria-label="RELAY home" className="shrink-0"><Logo /></Link>
-          <nav className="hidden min-w-0 flex-1 justify-center lg:flex" aria-label="Primary">
+          <nav className={cn("min-w-0 flex-1 items-center justify-center", home ? "hidden md:flex" : "hidden lg:flex")} aria-label="Primary">
             {home ? (
               <div className="flex items-center gap-4">
                 {GUIDE_LINKS.map((item) => (
@@ -174,17 +175,40 @@ export function AppShell({ children }: { children: ReactNode }) {
                     {item.label}
                   </Link>
                 ))}
-                <a href={PITCH_DECK_HREF} className="inline-flex min-h-9 items-center justify-center rounded-full border-2 border-[#163300] bg-white px-4 text-sm font-semibold text-[#163300] hover:bg-[#f3f8ea]">Pitch deck</a>
+                <a href={PITCH_DECK_HREF} className="inline-flex h-10 items-center justify-center rounded-full border-2 border-[#163300] bg-white px-4 text-sm font-semibold text-[#163300] hover:bg-[#f3f8ea]">Pitch deck</a>
               </div>
             ) : (
               <DesktopNav links={links} pathname={pathname} />
             )}
           </nav>
+          {home ? (
+            <button
+              type="button"
+              className="inline-flex h-10 items-center rounded-full border-2 border-[#163300] px-3 text-sm font-semibold text-[#163300] md:hidden"
+              aria-expanded={menuOpen}
+              aria-controls="home-nav"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              Menu
+            </button>
+          ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            {inApp ? null : <Button href="/dashboard" className="!whitespace-nowrap !border-transparent !bg-meadow !px-4 !text-brand hover:!bg-[#8fdf55]">Launch app</Button>}
+            {inApp ? null : <Button href="/dashboard" className="!h-10 !min-h-10 !whitespace-nowrap !border-transparent !bg-meadow !px-4 !py-0 !text-brand hover:!translate-y-0 hover:!bg-[#8fdf55]">Launch app</Button>}
             <WalletControls />
           </div>
         </div>
+        {home && menuOpen ? (
+          <div id="home-nav" className="absolute inset-x-0 top-16 border-b border-[#163300]/15 bg-white px-4 py-3 md:hidden">
+            <div className="mx-auto flex max-w-[1200px] flex-col gap-2">
+              {GUIDE_LINKS.map((item) => (
+                <Link key={item.href} href={item.href} className="text-sm font-semibold text-[#163300]" onClick={() => setMenuOpen(false)}>
+                  {item.label}
+                </Link>
+              ))}
+              <a href={PITCH_DECK_HREF} className="text-sm font-semibold text-[#163300]" onClick={() => setMenuOpen(false)}>Pitch deck</a>
+            </div>
+          </div>
+        ) : null}
       </header>
       <main id="main" className={cn(home ? "pb-0" : "mx-auto max-w-6xl px-4 py-10", !home && (checkout ? "pb-16" : "pb-28 lg:pb-16"))}>
         {children}
