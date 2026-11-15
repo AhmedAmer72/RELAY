@@ -12,10 +12,20 @@ const EVENT_NAMES = [
   "EscrowCancelled",
   "DisputeSplit",
   "AgentFunded",
+  "MutualCancelProposed",
+  "MutualCancelRevoked",
+  "AgentDelivered",
+  "ProtocolFeePaid",
+  "ResolverAccepted",
+  "ResolverFeePaid",
+  "ReviewExtensionProposed",
+  "ReviewExtensionAccepted",
 ] as const;
 
+const GLOBAL_EVENTS = ["DeliveryAgentSet"] as const;
+
 export type ChainEvent = {
-  name: (typeof EVENT_NAMES)[number];
+  name: (typeof EVENT_NAMES)[number] | (typeof GLOBAL_EVENTS)[number];
   contractAddress: Address;
   escrowId?: bigint;
   blockNumber: bigint;
@@ -35,7 +45,8 @@ export async function loadEscrowEvents(
   const chunk = 2_000n;
   for (let start = fromBlock; start <= toBlock; start += chunk) {
     const end = start + chunk - 1n > toBlock ? toBlock : start + chunk - 1n;
-    for (const eventName of EVENT_NAMES) {
+    const names = escrowId === undefined ? [...EVENT_NAMES, ...GLOBAL_EVENTS] : EVENT_NAMES;
+    for (const eventName of names) {
       const logs = await readEventRange(client, address, eventName, start, end, escrowId);
       for (const log of logs) {
         const args = (log.args ?? {}) as Record<string, unknown>;
@@ -70,7 +81,7 @@ type EscrowLog = {
 async function readEventRange(
   client: PublicClient,
   address: Address,
-  eventName: (typeof EVENT_NAMES)[number],
+  eventName: ChainEvent["name"],
   fromBlock: bigint,
   toBlock: bigint,
   escrowId?: bigint,
@@ -94,7 +105,10 @@ async function readEventRange(
 }
 
 export function describeEvent(event: ChainEvent) {
-  const reason = typeof event.args.reason === "number" || typeof event.args.reason === "bigint" ? Number(event.args.reason) : undefined;
+  const rawReason = event.args.reason;
+  const reason = typeof rawReason === "number" || typeof rawReason === "bigint"
+    ? Number(rawReason)
+    : typeof rawReason === "string" && /^\d+$/.test(rawReason) ? Number(rawReason) : undefined;
   switch (event.name) {
     case "EscrowCreated":
       return "Agreement created";
@@ -110,6 +124,7 @@ export function describeEvent(event: ChainEvent) {
       return "Buyer released the funds to the seller";
     case "EscrowRefunded":
       if (reason === 2) return "Resolver refunded the full amount to the buyer";
+      if (reason === 3) return "Both parties agreed to a full refund";
       return "Buyer claimed a refund after the missed delivery deadline";
     case "DisputeResolved":
       return event.args.paySeller ? "Resolver chose payment to the seller" : "Resolver chose a refund to the buyer";
@@ -119,6 +134,24 @@ export function describeEvent(event: ChainEvent) {
       return "Resolver split the escrowed amount between the seller and the buyer";
     case "AgentFunded":
       return "An authorized agent funded the escrow for the buyer";
+    case "MutualCancelProposed":
+      return "A party proposed a full refund";
+    case "MutualCancelRevoked":
+      return "The refund request was withdrawn";
+    case "AgentDelivered":
+      return "A delivery agent submitted the seller's evidence";
+    case "ProtocolFeePaid":
+      return "Seller fee paid";
+    case "ResolverAccepted":
+      return "Buyer accepted the resolver";
+    case "ResolverFeePaid":
+      return "Resolver fee paid from a dispute";
+    case "ReviewExtensionProposed":
+      return "A later review deadline was proposed";
+    case "ReviewExtensionAccepted":
+      return "The review deadline was extended";
+    case "DeliveryAgentSet":
+      return event.args.allowed ? "Seller allowed a delivery agent" : "Seller removed a delivery agent";
     default:
       return "Contract event";
   }

@@ -19,3 +19,4 @@ playwright-report
 test-results
 .e2e-local.json
 MEZO_LOOP_PROJECT_OVERVIEW.md
+data/

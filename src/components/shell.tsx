@@ -13,8 +13,10 @@ import { WalletControls } from "@/components/wallet";
 const APP_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" },
   { href: "/create", label: "Create", icon: "plus" },
+  { href: "/open", label: "Open", icon: "path" },
   { href: "/agents", label: "Agents", icon: "spark" },
   { href: "/activity", label: "Activity", icon: "pulse" },
+  { href: "/fees", label: "Fees", icon: "doc" },
 ] as const;
 
 const GUIDE_LINKS = [
@@ -27,8 +29,10 @@ const PITCH_DECK_HREF = "/docs#pitch-deck";
 const MOBILE_LINKS = [
   { href: "/dashboard", label: "Home", icon: "grid" },
   { href: "/create", label: "Create", icon: "plus" },
+  { href: "/open", label: "Open", icon: "path" },
   { href: "/agents", label: "Agents", icon: "spark" },
   { href: "/activity", label: "Activity", icon: "pulse" },
+  { href: "/fees", label: "Fees", icon: "doc" },
   { href: "/settings", label: "Settings", icon: "gear" },
 ] as const;
 

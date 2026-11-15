@@ -1,0 +1,36 @@
+{
+  "product": "RELAY",
+  "contract": "RelayEscrow",
+  "network": "mezo-testnet",
+  "chainId": 31611,
+  "address": "0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F",
+  "musd": "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
+  "musdName": "Mezo USD",
+  "musdSymbol": "MUSD",
+  "musdDecimals": 18,
+  "partialSettlement": true,
+  "agentBudgets": true,
+  "feeBps": 50,
+  "feeRecipient": "0x39B6fd99d31A67475911D9d763B0Bd8323f99685",
+  "deployer": "0x39B6fd99d31A67475911D9d763B0Bd8323f99685",
+  "deployTx": "0xf6f751a76b2dbd4a8cfcc7bd694f452e66049dc10c1e381bce3208987e2c0f95",
+  "blockNumber": 16652687,
+  "compiler": "0.8.28",
+  "evmVersion": "london",
+  "optimizer": {
+    "enabled": true,
+    "runs": 200
+  },
+  "viaIR": true,
+  "deployedAt": "2026-11-08T13:42:23.008Z",
+  "verification": {
+    "service": "sourcify",
+    "chainId": 31611,
+    "match": "exact_match",
+    "runtimeMatch": "exact_match",
+    "creationMatch": "exact_match",
+    "repo": "https://repo.sourcify.dev/contracts/full_match/31611/0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F/"
+  },
+  "explorerAddress": "https://explorer.test.mezo.org/address/0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F",
+  "explorerTx": "https://explorer.test.mezo.org/tx/0xf6f751a76b2dbd4a8cfcc7bd694f452e66049dc10c1e381bce3208987e2c0f95"
+}

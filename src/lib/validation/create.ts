@@ -23,6 +23,7 @@ export type CreateDraft = {
   reviewPeriod: number;
   acknowledged: boolean;
   milestones?: MilestoneDraft[];
+  resolverFee?: string;
 };
 
 export type MilestoneDraft = {
@@ -73,6 +74,12 @@ export function validateCreateDraft(draft: CreateDraft, seller?: string, nowSeco
     errors.reviewPeriod = "Choose a review window between 15 minutes and 30 days.";
   }
   if (!draft.acknowledged) errors.acknowledged = "Confirm that you have reviewed the resolver and the review-window rule.";
+  const feeRaw = draft.resolverFee?.trim() ?? "";
+  const fee = feeRaw === "" || feeRaw === "0" ? { ok: true as const, amount: 0n } : parseMusdInput(feeRaw);
+  if (!fee.ok) errors.resolverFee = fee.error;
+  else if ((draft.milestones?.length ?? 0) < 2 && parsed.ok && fee.amount >= parsed.amount) {
+    errors.resolverFee = "The resolver fee must be less than the agreement amount. Zero charges nothing unless a dispute is settled.";
+  }
 
   let metadataBytes = 0;
   if (!errors.title && !errors.description && !errors.terms) {
@@ -96,6 +103,9 @@ export function validateMilestones(draft: CreateDraft, nowSeconds = Math.floor(D
     if (row.label.trim().length < 2 || row.label.trim().length > 40) errors[`label-${index}`] = "Name this milestone in 2 to 40 characters.";
     const amount = parseMusdInput(row.amount);
     if (!amount.ok) errors[`amount-${index}`] = amount.error;
+    const feeRaw = draft.resolverFee?.trim() ?? "";
+    const fee = feeRaw === "" || feeRaw === "0" ? { ok: true as const, amount: 0n } : parseMusdInput(feeRaw);
+    if (fee.ok && amount.ok && fee.amount >= amount.amount) errors[`amount-${index}`] = "The resolver fee must be less than this stage.";
     if (!row.deliveryDeadline || !draft.fundingDeadline || row.deliveryDeadline < draft.fundingDeadline + MIN_DELIVERY_GAP) {
       errors[`delivery-${index}`] = "Each delivery deadline must be at least 1 hour after funding.";
     } else if (row.deliveryDeadline > nowSeconds + MAX_HORIZON) {

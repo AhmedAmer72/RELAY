@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useBalance, useBlock, useBytecode, usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { getAppChain, getDeployBlock, getEscrowAddresses, getEscrowConfig, getMusdConfig } from "@/lib/chain/config";
@@ -211,12 +210,8 @@ export function useChainEvents(escrowId?: bigint, contractAddress?: Address) {
       if (!client || addresses.length === 0) throw new Error("The network client is unavailable.");
       const latest = await client.getBlockNumber();
       const deploy = getDeployBlock();
-      let from = deploy ?? (latest > 50_000n ? latest - 50_000n : 0n);
-      let partial = deploy === undefined;
-      if (latest > from && latest - from > 200_000n) {
-        from = latest - 200_000n;
-        partial = true;
-      }
+      const from = deploy ?? (latest > 50_000n ? latest - 50_000n : 0n);
+      const partial = deploy === undefined;
       const batches = await Promise.all(addresses.map((address) => loadEscrowEvents(client, address, from, latest, escrowId)));
       const items = batches.flat().sort((left, right) => (left.blockNumber === right.blockNumber ? 0 : left.blockNumber > right.blockNumber ? -1 : 1));
       return { items, from, latest, partial };
@@ -224,7 +219,24 @@ export function useChainEvents(escrowId?: bigint, contractAddress?: Address) {
   });
 }
 
-export function panelFor(model: EscrowModel, protocol: ReturnType<typeof useProtocol>, partialSettlement = false, agentAllowance?: bigint) {
+export function panelFor(
+  model: EscrowModel,
+  protocol: ReturnType<typeof useProtocol>,
+  partialSettlement = false,
+  agentAllowance?: bigint,
+  extra?: {
+    mutualCancel?: boolean;
+    cancelProposer?: Address;
+    deliveryAgent?: boolean;
+    resolverAcceptance?: boolean;
+    resolverAccepted?: boolean;
+    hasPredecessor?: boolean;
+    predecessorReleased?: boolean;
+    reviewExtension?: boolean;
+    extensionProposer?: Address;
+    extensionDeadline?: number;
+  },
+) {
   return evaluateEscrow({
     escrow: model,
     wallet: protocol.account.address,
@@ -240,5 +252,15 @@ export function panelFor(model: EscrowModel, protocol: ReturnType<typeof useProt
     nativeBalance: protocol.nativeBalance,
     partialSettlement,
     agentAllowance,
+    mutualCancel: extra?.mutualCancel,
+    cancelProposer: extra?.cancelProposer,
+    deliveryAgent: extra?.deliveryAgent,
+    resolverAcceptance: extra?.resolverAcceptance,
+    resolverAccepted: extra?.resolverAccepted,
+    hasPredecessor: extra?.hasPredecessor,
+    predecessorReleased: extra?.predecessorReleased,
+    reviewExtension: extra?.reviewExtension,
+    extensionProposer: extra?.extensionProposer,
+    extensionDeadline: extra?.extensionDeadline,
   });
 }

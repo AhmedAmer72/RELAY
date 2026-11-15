@@ -138,13 +138,81 @@ export function AgentBudgetPanel() {
   );
 }
 
+export function DeliveryAgentCard() {
+  const protocol = useProtocol();
+  const wallet = protocol.account.address;
+  const escrow = protocol.escrow.address;
+  const [agent, setAgent] = useState("");
+  const [error, setError] = useState("");
+  const tx = useTrackedTx();
+  const { writeContractAsync } = useWriteContract();
+  const { switchChain } = useSwitchChain();
+  const agentAddress = isAddress(agent) ? getAddress(agent) : undefined;
+  const self = Boolean(wallet && agentAddress && agentAddress.toLowerCase() === wallet.toLowerCase());
+  const probe = useReadContract({
+    address: escrow,
+    abi: relayEscrowAbi,
+    functionName: "deliveryAgentSupported",
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(escrow), retry: false },
+  });
+  const current = useReadContract({
+    address: escrow,
+    abi: relayEscrowAbi,
+    functionName: "deliveryAgent",
+    args: wallet && agentAddress ? [wallet, agentAddress] : undefined,
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(probe.isSuccess && escrow && wallet && agentAddress && !self), retry: false },
+  });
+  const allowed = current.data === true;
+  const ready = Boolean(probe.isSuccess && escrow && wallet && protocol.chainMatches && agentAddress && !self);
+
+  async function save(next: boolean) {
+    if (!escrow || !agentAddress || self) {
+      setError("Enter an agent address that is not your own wallet.");
+      return;
+    }
+    setError("");
+    await tx.run(next ? "Allow delivery agent" : "Remove delivery agent", () => writeContractAsync({
+      chainId: protocol.chain.id,
+      address: escrow,
+      abi: relayEscrowAbi,
+      functionName: "setDeliveryAgent",
+      args: [agentAddress, next],
+    }), async () => {
+      void current.refetch();
+    });
+  }
+
+  return (
+    <Card className="form-panel space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Delivery agent</h2>
+        <p className="mt-2 text-sm text-muted">This address can submit delivery for your agreements. It cannot release, refund, dispute, or cancel.</p>
+      </div>
+      <Field label="Agent wallet" error={self ? "Use a different address." : undefined}>
+        <input className={`${controlClass} num`} value={agent} onChange={(event) => { setAgent(event.target.value.trim()); setError(""); }} placeholder="0x" disabled={!escrow} />
+      </Field>
+      <p className="text-sm text-muted">On this escrow: {current.isFetching ? "Checking…" : allowed ? "Allowed to submit delivery" : "Not a delivery agent"}</p>
+      {escrow && probe.isError ? <p className="text-sm text-warning">This escrow has no delivery-agent function, so the buttons stay off.</p> : null}
+      {escrow && wallet && !protocol.chainMatches ? <Button onClick={() => switchChain({ chainId: protocol.chain.id })}>Switch to {protocol.chain.name}</Button> : null}
+      {error ? <p className="text-sm font-semibold text-danger">{error}</p> : null}
+      <TxStatus phase={tx.phase} />
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={!ready || allowed} busy={isBusy(tx.phase, "Allow")} onClick={() => void save(true)}>Allow delivery</Button>
+        <Button variant="secondary" disabled={!ready || !allowed} busy={isBusy(tx.phase, "Remove")} onClick={() => void save(false)}>Remove</Button>
+      </div>
+    </Card>
+  );
+}
+
 export function AgentsScreen() {
   return (
     <div className="space-y-8">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">Spending limits</p>
         <h1 className="display-title mt-1">Agent budgets</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted">Another address can fund your agreements, up to a cap.</p>
+        <p className="mt-2 max-w-2xl text-sm text-muted">Another address can fund your agreements, up to a cap, or submit delivery without being able to settle.</p>
       </div>
       <ol className="grid gap-3 md:grid-cols-3">
         <li className="rounded-[28px] border border-line bg-white p-5">
@@ -164,6 +232,7 @@ export function AgentsScreen() {
         </li>
       </ol>
       <AgentBudgetPanel />
+      <DeliveryAgentCard />
     </div>
   );
 }

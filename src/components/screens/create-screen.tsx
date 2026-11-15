@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { decodeEventLog, type TransactionReceipt } from "viem";
-import { useConfig, useConnect, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
+import { useConfig, useConnect, usePublicClient, useSignMessage, useSwitchChain, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { relayEscrowAbi } from "@/lib/contracts/relayEscrowAbi";
 import { NO_FEE_DISCLOSURE, RESOLVER_DISCLOSURE, REVIEW_PRESETS, AUTO_RELEASE_DISCLOSURE } from "@/lib/escrow/constants";
-import { formatMusd, parseMusdInput, shortAddress } from "@/lib/escrow/format";
-import { formatTimestamp, localInputToUnix, unixToLocalInput } from "@/lib/escrow/time";
+import { formatMusd, parseMusdInput, shortAddress, isZeroAddress } from "@/lib/escrow/format";
 import { coerceRawEscrow, parseEscrow } from "@/lib/escrow/parse";
+import { formatTimestamp, localInputToUnix, unixToLocalInput } from "@/lib/escrow/time";
+import { MilestoneFundSequence } from "@/components/escrow/milestone-fund";
 import { buildMetadata } from "@/lib/metadata/canonical";
+import { canonicalTemplate, templateMessage, type SellerTemplate } from "@/lib/templates-shared";
 import { validateCreateDraft, validateMilestones, type CreateDraft, type MilestoneDraft } from "@/lib/validation/create";
 import { useProtocol } from "@/hooks/use-escrow";
 import { useTrackedTx } from "@/hooks/use-tx";
@@ -30,9 +33,17 @@ function initialDraft(): CreateDraft {
     fundingDeadline: now + 24 * 60 * 60,
     deliveryDeadline: now + 72 * 60 * 60,
     reviewPeriod: 48 * 60 * 60,
+    resolverFee: "0",
     acknowledged: false,
     milestones: [],
   };
+}
+
+function resolverFeeAmount(value?: string) {
+  const raw = value?.trim() ?? "";
+  if (raw === "" || raw === "0") return 0n;
+  const parsed = parseMusdInput(raw);
+  return parsed.ok ? parsed.amount : 0n;
 }
 
 function blankMilestone(draft: CreateDraft): MilestoneDraft {
@@ -49,7 +60,12 @@ export function CreateScreen() {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<CreateDraft>(initialDraft);
   const [createdId, setCreatedId] = useState<bigint>();
+  const search = useSearchParams();
+  const linkedIds = (search.get("fund") ?? "").split(",").flatMap((value) => /^[1-9]\d*$/.test(value) ? [BigInt(value)] : []);
   const [createdIds, setCreatedIds] = useState<bigint[]>([]);
+  const { signMessageAsync } = useSignMessage();
+  const [templateNote, setTemplateNote] = useState("");
+  const [templates, setTemplates] = useState<{ id: string; json: string }[]>([]);
   const [planProgress, setPlanProgress] = useState<string>();
   const [createWarning, setCreateWarning] = useState<string>();
   const [origin, setOrigin] = useState("");
@@ -61,6 +77,34 @@ export function CreateScreen() {
   const { connect, connectors } = useConnect();
   const { switchChain } = useSwitchChain();
   const seller = protocol.account.address;
+
+  useEffect(() => {
+    const clone = search.get("clone");
+    const escrowAddress = (search.get("escrow") || protocol.escrow.address) as `0x${string}` | undefined;
+    if (!clone || !/^[1-9]\d*$/.test(clone) || !publicClient || !escrowAddress) return;
+    const id = BigInt(clone);
+    void publicClient.readContract({
+      address: escrowAddress,
+      abi: relayEscrowAbi,
+      functionName: "getEscrow",
+      args: [id],
+    }).then((stored) => {
+      const model = parseEscrow(id, coerceRawEscrow(stored));
+      if (!model.metadata) return;
+      setDraft((current) => ({
+        ...current,
+        title: model.metadata?.title ?? current.title,
+        description: model.metadata?.description ?? current.description,
+        terms: model.metadata?.terms ?? current.terms,
+        amount: formatMusd(model.amount),
+        buyerMode: isZeroAddress(model.buyer) ? "open" : "specific",
+        buyer: isZeroAddress(model.buyer) ? "" : model.buyer,
+        resolver: model.resolver,
+        reviewPeriod: model.reviewPeriod,
+      }));
+      setTemplateNote("This starts a new agreement. Set new deadlines. The finished agreement is unchanged.");
+    }).catch(() => setTemplateNote("The agreement to copy could not be read."));
+  }, [search, publicClient, protocol.escrow.address]);
   const validation = useMemo(() => validateCreateDraft(draft, seller), [draft, seller]);
   const milestoneCheck = useMemo(() => validateMilestones(draft), [draft]);
   const usingMilestones = (draft.milestones?.length ?? 0) >= 2;
@@ -113,6 +157,8 @@ export function CreateScreen() {
             metadata.termsHash,
             metadata.metadataHash,
             metadata.json,
+            index === 0 ? 0n : ids[index - 1],
+            resolverFeeAmount(draft.resolverFee),
           ],
         });
         const receipt = await waitForTransactionReceipt(config, { hash, timeout: 120_000 });
@@ -167,6 +213,8 @@ export function CreateScreen() {
         metadata.termsHash,
         metadata.metadataHash,
         metadata.json,
+        0n,
+        resolverFeeAmount(draft.resolverFee),
       ],
     }), async (receipt) => {
       try {
@@ -219,6 +267,73 @@ export function CreateScreen() {
                 </label>
               </div>
               <p className="mt-2 text-sm text-muted">{usingMilestones ? "Each stage is its own funded agreement." : "One amount. One delivery."}</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-white p-4 text-sm">
+              <p className="font-semibold">Saved on this host</p>
+              <p className="mt-1 text-muted">A template is a draft for this wallet. Creating an agreement still writes the terms on-chain. The template is not the agreement.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="secondary" disabled={!seller} onClick={() => void (async () => {
+                  if (!seller) return;
+                  const response = await fetch(`/api/templates?seller=${seller}`);
+                  const body = await response.json() as { templates?: { id: string; json: string }[] };
+                  setTemplates(body.templates ?? []);
+                  setTemplateNote(body.templates?.length ? "Choose a saved draft." : "No saved draft for this wallet.");
+                })()}>Load drafts</Button>
+                <Button variant="secondary" disabled={!seller} onClick={() => void (async () => {
+                  if (!seller) return;
+                  const template: SellerTemplate = {
+                    title: draft.title,
+                    description: draft.description,
+                    terms: draft.terms,
+                    amount: draft.amount,
+                    buyerMode: draft.buyerMode,
+                    buyer: draft.buyer,
+                    resolver: draft.resolver,
+                    reviewPeriod: draft.reviewPeriod,
+                  };
+                  try {
+                    const json = canonicalTemplate(template);
+                    const signature = await signMessageAsync({ message: templateMessage(seller, json) });
+                    const response = await fetch("/api/templates", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ seller, template, signature }),
+                    });
+                    const body = await response.json() as { error?: string };
+                    if (!response.ok) throw new Error(body.error ?? "The draft was not saved.");
+                    setTemplateNote("Draft saved for this wallet on this host.");
+                  } catch (error) {
+                    setTemplateNote(error instanceof Error ? error.message : "The draft was not saved.");
+                  }
+                })()}>Save draft</Button>
+              </div>
+              {templates.length > 0 ? (
+                <label className="mt-3 block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-faint">Use a draft</span>
+                  <select className={`${controlClass} mt-1`} defaultValue="" onChange={(event) => {
+                    const found = templates.find((item) => item.id === event.target.value);
+                    if (!found) return;
+                    const parsed = JSON.parse(found.json) as SellerTemplate;
+                    patch({
+                      title: parsed.title,
+                      description: parsed.description,
+                      terms: parsed.terms,
+                      amount: parsed.amount,
+                      buyerMode: parsed.buyerMode,
+                      buyer: parsed.buyer,
+                      resolver: parsed.resolver,
+                      reviewPeriod: parsed.reviewPeriod,
+                    });
+                  }}>
+                    <option value="">Select a draft</option>
+                    {templates.map((item) => {
+                      const parsed = JSON.parse(item.json) as SellerTemplate;
+                      return <option key={item.id} value={item.id}>{parsed.title}</option>;
+                    })}
+                  </select>
+                </label>
+              ) : null}
+              {templateNote ? <p className="mt-2 text-muted">{templateNote}</p> : null}
             </div>
             <Field label="Title" error={attempted ? validation.errors.title : undefined} hint="3–80 characters.">
               <input className={controlClass} value={draft.title} onChange={(event) => patch({ title: event.target.value })} />
@@ -299,6 +414,9 @@ export function CreateScreen() {
             <Field label="Dispute resolver" error={attempted ? validation.errors.resolver : undefined} hint="Can pay the seller, refund the buyer, or split.">
               <input className={`${controlClass} num`} value={draft.resolver} onChange={(event) => patch({ resolver: event.target.value.trim() })} placeholder="0x" />
             </Field>
+            <Field label="Resolver fee in MUSD" error={attempted ? validation.errors.resolverFee : undefined} hint="Taken from the escrow only when a dispute is settled. Zero means a normal release or refund pays no resolver.">
+              <input className={`${controlClass} num`} inputMode="decimal" value={draft.resolverFee ?? "0"} onChange={(event) => patch({ resolverFee: event.target.value })} />
+            </Field>
           </>
         ) : null}
         {step === 2 ? (
@@ -315,12 +433,17 @@ export function CreateScreen() {
         {createWarning ? <p className="text-sm text-warning">{createWarning}</p> : null}
         {planProgress ? <p className="flex items-center gap-2 text-sm text-brand"><span className="live-dot" aria-hidden />{planProgress}</p> : null}
         {createdIds.length > 0 ? (
-          <div className="pop-in rounded-2xl bg-[#e7f8d4] p-4 text-sm">
+          <div className="pop-in space-y-3 rounded-2xl bg-[#e7f8d4] p-4 text-sm">
             <p className="font-medium text-brand">{createdIds.length} milestone agreements were read from confirmed transactions.</p>
             <ul className="mt-2 space-y-1">
               {createdIds.map((id) => <li key={id.toString()} className="break-all">{origin}/checkout/{id.toString()}</li>)}
             </ul>
+            <p className="break-all">Buyer funding link: {origin}/create?fund={createdIds.map((id) => id.toString()).join(",")}</p>
+            <MilestoneFundSequence ids={createdIds} escrow={protocol.escrow.address} chainId={protocol.chain.id} musd={protocol.musd.address} account={seller} />
           </div>
+        ) : null}
+        {createdIds.length === 0 && linkedIds.length > 1 ? (
+          <MilestoneFundSequence ids={linkedIds} escrow={protocol.escrow.address} chainId={protocol.chain.id} musd={protocol.musd.address} account={seller} />
         ) : null}
         {createdId ? (
           <div className="pop-in rounded-2xl bg-[#e7f8d4] p-4 text-sm">
@@ -369,6 +492,7 @@ function Review({ draft, seller, amount, metadataBytes }: { draft: CreateDraft; 
       <Row label="Delivery deadline" value={formatTimestamp(draft.deliveryDeadline)} />
       <Row label="Review window" value={REVIEW_PRESETS.find((preset) => preset.seconds === draft.reviewPeriod)?.label ?? `${draft.reviewPeriod} seconds`} />
       <Row label="Resolver" value={draft.resolver || "—"} />
+      <Row label="Resolver fee" value={draft.resolverFee?.trim() ? `${draft.resolverFee} MUSD on a dispute only` : "0"} />
       <p className="text-muted">{AUTO_RELEASE_DISCLOSURE}</p>
       <p className="text-muted">{RESOLVER_DISCLOSURE}</p>
       <p className="text-faint">{NO_FEE_DISCLOSURE}</p>

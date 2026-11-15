@@ -15,9 +15,11 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///      State machine
 ///      -------------
 ///      Created   -> Funded      fundEscrow | fundEscrowAsAgent
+///                   A named buyer must accept the resolver first.
+///                   A predecessor must already be Released.
 ///      Created   -> Cancelled   cancelUnfunded
-///      Funded    -> Delivered   submitDelivery
-///      Funded    -> Refunded    refundAfterMissedDeadline
+///      Funded    -> Delivered   submitDelivery | submitDeliveryAsAgent
+///      Funded    -> Refunded    refundAfterMissedDeadline | acceptMutualCancel
 ///      Delivered -> Released    releaseToSeller | releaseAfterReviewWindow
 ///      Delivered -> Disputed    raiseDispute
 ///      Disputed  -> Released    resolveDispute(paySeller = true)
@@ -84,6 +86,7 @@ contract RelayEscrow is ReentrancyGuard {
     uint8 public constant RELEASE_DISPUTE = 3;
     uint8 public constant REFUND_MISSED_DELIVERY = 1;
     uint8 public constant REFUND_DISPUTE = 2;
+    uint8 public constant REFUND_MUTUAL = 3;
 
     uint32 public constant MIN_REVIEW_PERIOD = 15 minutes;
     uint32 public constant MAX_REVIEW_PERIOD = 30 days;
@@ -92,13 +95,28 @@ contract RelayEscrow is ReentrancyGuard {
     uint256 public constant MAX_METADATA_BYTES = 2048;
     uint256 public constant MAX_EVIDENCE_BYTES = 800;
     uint256 public constant MAX_REASON_BYTES = 280;
+    uint256 public constant FEE_BPS = 50;
+    uint256 private constant FEE_DENOMINATOR = 10_000;
 
     IERC20 public immutable musdToken;
+    address public immutable feeRecipient;
 
     uint256 public nextEscrowId = 1;
     mapping(uint256 => Escrow) private _escrows;
     /// @notice Remaining MUSD a buyer allows an agent to fund. The agent does not become the buyer.
     mapping(address buyer => mapping(address agent => uint256)) public agentAllowance;
+    /// @notice Address that proposed a full refund of a funded agreement. The other party must accept.
+    mapping(uint256 escrowId => address proposer) public mutualCancelProposer;
+    /// @notice Seller-approved address that may submit delivery and nothing else.
+    mapping(address seller => mapping(address agent => bool)) public deliveryAgent;
+    /// @notice Earlier agreement that must be Released before this one can be funded. Zero means none.
+    mapping(uint256 escrowId => uint256 predecessorId) public predecessorOf;
+    /// @notice MUSD paid to the resolver only when a dispute is settled. Zero means none.
+    mapping(uint256 escrowId => uint256 fee) public resolverFeeOf;
+    /// @notice Named buyer has accepted the resolver. Open invoices are accepted by funding.
+    mapping(uint256 escrowId => bool accepted) public resolverAccepted;
+    mapping(uint256 escrowId => address proposer) public reviewExtensionProposer;
+    mapping(uint256 escrowId => uint64 proposedDeadline) public reviewExtensionDeadline;
 
     event EscrowCreated(
         uint256 indexed escrowId,
@@ -122,6 +140,15 @@ contract RelayEscrow is ReentrancyGuard {
     event DisputeSplit(uint256 indexed escrowId, address indexed resolver, uint256 sellerAmount, uint256 buyerAmount);
     event AgentAllowanceSet(address indexed buyer, address indexed agent, uint256 amount);
     event AgentFunded(uint256 indexed escrowId, address indexed agent, address indexed buyer, uint256 amount);
+    event ProtocolFeePaid(uint256 indexed escrowId, address indexed recipient, uint256 amount);
+    event MutualCancelProposed(uint256 indexed escrowId, address indexed proposer);
+    event MutualCancelRevoked(uint256 indexed escrowId, address indexed proposer);
+    event DeliveryAgentSet(address indexed seller, address indexed agent, bool allowed);
+    event AgentDelivered(uint256 indexed escrowId, address indexed agent, address indexed seller);
+    event ResolverAccepted(uint256 indexed escrowId, address indexed buyer);
+    event ResolverFeePaid(uint256 indexed escrowId, address indexed resolver, uint256 amount);
+    event ReviewExtensionProposed(uint256 indexed escrowId, address indexed proposer, uint64 newDeadline);
+    event ReviewExtensionAccepted(uint256 indexed escrowId, address indexed acceptor, uint64 newDeadline);
 
     error ZeroAmount();
     error InvalidAddress();
@@ -148,10 +175,25 @@ contract RelayEscrow is ReentrancyGuard {
     error SplitAmount();
     error AgentNotAllowed();
     error AgentAllowance();
+    error PredecessorNotReleased();
+    error ResolverNotAccepted();
+    error ResolverFee();
 
-    constructor(address musd) {
+    constructor(address musd, address recipient) {
         if (musd == address(0) || musd.code.length == 0) revert InvalidAddress();
+        if (recipient == address(0) || recipient == address(this)) revert InvalidAddress();
         musdToken = IERC20(musd);
+        feeRecipient = recipient;
+    }
+
+    /// @notice Protocol fee in basis points. 50 means 0.50% of a seller payout. Refunds are not charged.
+    function feeBps() external pure returns (uint256) {
+        return FEE_BPS;
+    }
+
+    /// @notice MUSD taken from a seller payout. Integer division can make this zero for a tiny amount.
+    function protocolFee(uint256 sellerAmount) public pure returns (uint256) {
+        return sellerAmount * FEE_BPS / FEE_DENOMINATOR;
     }
 
     function escrowCount() external view returns (uint256) {
@@ -174,9 +216,12 @@ contract RelayEscrow is ReentrancyGuard {
         uint32 reviewPeriod,
         bytes32 termsHash,
         bytes32 metadataHash,
-        string calldata metadata
+        string calldata metadata,
+        uint256 predecessorId,
+        uint256 resolverFee
     ) external returns (uint256 escrowId) {
         if (amount == 0) revert ZeroAmount();
+        if (resolverFee >= amount) revert ResolverFee();
         if (resolver == address(0)) revert InvalidAddress();
         if (buyer == msg.sender) revert BuyerIsSeller();
         if (resolver == msg.sender || (buyer != address(0) && resolver == buyer)) revert ResolverIsParty();
@@ -192,6 +237,11 @@ contract RelayEscrow is ReentrancyGuard {
         if (metadataLength == 0 || metadataLength > MAX_METADATA_BYTES) revert InvalidMetadata();
         if (termsHash == bytes32(0) || metadataHash == bytes32(0)) revert ZeroHash();
         if (keccak256(bytes(metadata)) != metadataHash) revert HashMismatch();
+        if (predecessorId != 0) {
+            Escrow storage prior = _load(predecessorId);
+            if (prior.seller != msg.sender) revert NotSeller();
+            if (buyer != address(0) && prior.buyer != address(0) && prior.buyer != buyer) revert NotBuyer();
+        }
 
         escrowId = nextEscrowId++;
         Escrow storage escrow = _escrows[escrowId];
@@ -207,6 +257,8 @@ contract RelayEscrow is ReentrancyGuard {
         escrow.metadataHash = metadataHash;
         escrow.metadata = metadata;
         escrow.state = State.Created;
+        predecessorOf[escrowId] = predecessorId;
+        resolverFeeOf[escrowId] = resolverFee;
 
         emit EscrowCreated(
             escrowId,
@@ -230,9 +282,11 @@ contract RelayEscrow is ReentrancyGuard {
 
         if (escrow.buyer != address(0)) {
             if (msg.sender != escrow.buyer) revert NotBuyer();
+            _requireFundable(escrow, escrowId);
         } else {
             if (msg.sender == escrow.seller) revert BuyerIsSeller();
             if (msg.sender == escrow.resolver) revert ResolverIsParty();
+            _requireFundable(escrow, escrowId);
             escrow.buyer = msg.sender;
         }
 
@@ -259,13 +313,13 @@ contract RelayEscrow is ReentrancyGuard {
     function fundEscrowAsAgent(uint256 escrowId) external nonReentrant {
         Escrow storage escrow = _load(escrowId);
         if (escrow.state != State.Created) revert InvalidState();
-        if (block.timestamp > escrow.fundingDeadline) revert FundingClosed();
         if (escrow.buyer == address(0)) revert NotBuyer();
         if (msg.sender == escrow.buyer || msg.sender == escrow.seller || msg.sender == escrow.resolver) revert AgentNotAllowed();
 
         uint256 amount = escrow.amount;
         uint256 remaining = agentAllowance[escrow.buyer][msg.sender];
         if (remaining < amount) revert AgentAllowance();
+        _requireFundable(escrow, escrowId);
         agentAllowance[escrow.buyer][msg.sender] = remaining - amount;
         escrow.state = State.Funded;
 
@@ -282,21 +336,17 @@ contract RelayEscrow is ReentrancyGuard {
     function submitDelivery(uint256 escrowId, bytes32 evidenceHash, string calldata evidence) external nonReentrant {
         Escrow storage escrow = _load(escrowId);
         if (msg.sender != escrow.seller) revert NotSeller();
-        if (escrow.state != State.Funded) revert InvalidState();
-        if (block.timestamp > escrow.deliveryDeadline) revert DeliveryWindowClosed();
-        if (evidenceHash == bytes32(0)) revert ZeroHash();
+        _submitDelivery(escrow, escrowId, evidenceHash, evidence);
+    }
 
-        uint256 evidenceLength = bytes(evidence).length;
-        if (evidenceLength == 0 || evidenceLength > MAX_EVIDENCE_BYTES) revert EvidenceTooLarge();
-        if (keccak256(bytes(evidence)) != evidenceHash) revert HashMismatch();
-
-        uint64 reviewDeadline = uint64(block.timestamp) + escrow.reviewPeriod;
-        escrow.evidenceHash = evidenceHash;
-        escrow.evidence = evidence;
-        escrow.reviewDeadline = reviewDeadline;
-        escrow.state = State.Delivered;
-
-        emit DeliverySubmitted(escrowId, evidenceHash, reviewDeadline);
+    /// @notice A seller-approved agent submits delivery. The agent does not become the seller.
+    function submitDeliveryAsAgent(uint256 escrowId, bytes32 evidenceHash, string calldata evidence) external nonReentrant {
+        Escrow storage escrow = _load(escrowId);
+        address seller = escrow.seller;
+        if (!deliveryAgent[seller][msg.sender]) revert AgentNotAllowed();
+        if (msg.sender == seller || msg.sender == escrow.buyer || msg.sender == escrow.resolver) revert AgentNotAllowed();
+        _submitDelivery(escrow, escrowId, evidenceHash, evidence);
+        emit AgentDelivered(escrowId, msg.sender, seller);
     }
 
     /// @notice Buyer accepts delivery and releases the full amount to the seller.
@@ -349,6 +399,7 @@ contract RelayEscrow is ReentrancyGuard {
         if (escrow.state != State.Disputed) revert InvalidState();
 
         emit DisputeResolved(escrowId, msg.sender, paySeller);
+        _takeResolverFee(escrow, escrowId);
         if (paySeller) {
             _release(escrow, escrowId, RELEASE_DISPUTE);
         } else {
@@ -361,12 +412,110 @@ contract RelayEscrow is ReentrancyGuard {
         return true;
     }
 
+    /// @notice True when a funded agreement can be refunded by both parties.
+    function mutualCancelSupported() external pure returns (bool) {
+        return true;
+    }
+
+    /// @notice True when a seller can authorize an agent to submit delivery.
+    function deliveryAgentSupported() external pure returns (bool) {
+        return true;
+    }
+
+    function milestoneGateSupported() external pure returns (bool) {
+        return true;
+    }
+
+    function resolverAcceptanceSupported() external pure returns (bool) {
+        return true;
+    }
+
+    function reviewExtensionSupported() external pure returns (bool) {
+        return true;
+    }
+
+    function resolverFeeSupported() external pure returns (bool) {
+        return true;
+    }
+
+    /// @notice Named buyer accepts the resolver. Funding stays off until this is called.
+    function acceptResolver(uint256 escrowId) external {
+        Escrow storage escrow = _load(escrowId);
+        if (escrow.state != State.Created) revert InvalidState();
+        if (escrow.buyer == address(0) || msg.sender != escrow.buyer) revert NotBuyer();
+        resolverAccepted[escrowId] = true;
+        emit ResolverAccepted(escrowId, msg.sender);
+    }
+
+    /// @notice Buyer or seller proposes a later review deadline. The other party must accept.
+    function proposeReviewExtension(uint256 escrowId, uint64 newDeadline) external {
+        Escrow storage escrow = _load(escrowId);
+        if (escrow.state != State.Delivered) revert InvalidState();
+        if (block.timestamp > escrow.reviewDeadline) revert ReviewWindowClosed();
+        if (msg.sender != escrow.buyer && msg.sender != escrow.seller) revert NotParty();
+        _checkReviewExtension(escrow, newDeadline);
+        reviewExtensionProposer[escrowId] = msg.sender;
+        reviewExtensionDeadline[escrowId] = newDeadline;
+        emit ReviewExtensionProposed(escrowId, msg.sender, newDeadline);
+    }
+
+    /// @notice The party that did not propose accepts the later review deadline.
+    function acceptReviewExtension(uint256 escrowId) external {
+        Escrow storage escrow = _load(escrowId);
+        if (escrow.state != State.Delivered) revert InvalidState();
+        if (block.timestamp > escrow.reviewDeadline) revert ReviewWindowClosed();
+        address proposer = reviewExtensionProposer[escrowId];
+        uint64 proposed = reviewExtensionDeadline[escrowId];
+        if (proposer == address(0) || proposed == 0 || msg.sender == proposer) revert NotParty();
+        if (msg.sender != escrow.buyer && msg.sender != escrow.seller) revert NotParty();
+        _checkReviewExtension(escrow, proposed);
+        escrow.reviewDeadline = proposed;
+        delete reviewExtensionProposer[escrowId];
+        delete reviewExtensionDeadline[escrowId];
+        emit ReviewExtensionAccepted(escrowId, msg.sender, proposed);
+    }
+
+    /// @notice Buyer or seller asks for a full refund. Only the other party can accept.
+    function proposeMutualCancel(uint256 escrowId) external {
+        Escrow storage escrow = _load(escrowId);
+        if (escrow.state != State.Funded) revert InvalidState();
+        if (msg.sender != escrow.buyer && msg.sender != escrow.seller) revert NotParty();
+        mutualCancelProposer[escrowId] = msg.sender;
+        emit MutualCancelProposed(escrowId, msg.sender);
+    }
+
+    /// @notice The proposer withdraws a mutual-cancel request. No tokens move.
+    function revokeMutualCancel(uint256 escrowId) external {
+        if (mutualCancelProposer[escrowId] != msg.sender) revert NotParty();
+        delete mutualCancelProposer[escrowId];
+        emit MutualCancelRevoked(escrowId, msg.sender);
+    }
+
+    /// @notice The party that did not propose accepts a full refund. No seller fee is charged.
+    function acceptMutualCancel(uint256 escrowId) external nonReentrant {
+        Escrow storage escrow = _load(escrowId);
+        if (escrow.state != State.Funded) revert InvalidState();
+        address proposer = mutualCancelProposer[escrowId];
+        if (proposer == address(0) || msg.sender == proposer) revert NotParty();
+        if (msg.sender != escrow.buyer && msg.sender != escrow.seller) revert NotParty();
+        delete mutualCancelProposer[escrowId];
+        _refund(escrow, escrowId, REFUND_MUTUAL);
+    }
+
+    /// @notice Seller allows or removes an address that can submit delivery for the seller's agreements.
+    function setDeliveryAgent(address agent, bool allowed) external {
+        if (agent == address(0) || agent == msg.sender) revert InvalidAddress();
+        deliveryAgent[msg.sender][agent] = allowed;
+        emit DeliveryAgentSet(msg.sender, agent, allowed);
+    }
+
     /// @notice Resolver splits a disputed escrow. The seller receives `sellerAmount` and the buyer receives the remainder.
     /// @dev Neither side may receive the full amount through this function. Use `resolveDispute` for a full release or refund.
     function resolveDisputeSplit(uint256 escrowId, uint256 sellerAmount) external nonReentrant {
         Escrow storage escrow = _load(escrowId);
         if (msg.sender != escrow.resolver) revert NotResolver();
         if (escrow.state != State.Disputed) revert InvalidState();
+        _takeResolverFee(escrow, escrowId);
         if (sellerAmount == 0 || sellerAmount >= escrow.amount) revert SplitAmount();
 
         address buyer = escrow.buyer;
@@ -374,9 +523,9 @@ contract RelayEscrow is ReentrancyGuard {
         address seller = escrow.seller;
         uint256 buyerAmount = escrow.amount - sellerAmount;
         escrow.state = State.Split;
+        uint256 sellerNet = _paySeller(escrowId, seller, sellerAmount);
 
-        emit DisputeSplit(escrowId, msg.sender, sellerAmount, buyerAmount);
-        musdToken.safeTransfer(seller, sellerAmount);
+        emit DisputeSplit(escrowId, msg.sender, sellerNet, buyerAmount);
         musdToken.safeTransfer(buyer, buyerAmount);
     }
 
@@ -393,8 +542,43 @@ contract RelayEscrow is ReentrancyGuard {
         address seller = escrow.seller;
         uint256 amount = escrow.amount;
         escrow.state = State.Released;
-        musdToken.safeTransfer(seller, amount);
-        emit EscrowReleased(escrowId, seller, amount, reason);
+        uint256 net = _paySeller(escrowId, seller, amount);
+        emit EscrowReleased(escrowId, seller, net, reason);
+    }
+
+    /// @dev Charges the seller payout only. The caller must still transfer any buyer remainder.
+    function _paySeller(uint256 escrowId, address seller, uint256 gross) private returns (uint256 net) {
+        uint256 fee = protocolFee(gross);
+        net = gross - fee;
+        if (fee != 0) {
+            musdToken.safeTransfer(feeRecipient, fee);
+            emit ProtocolFeePaid(escrowId, feeRecipient, fee);
+        }
+        musdToken.safeTransfer(seller, net);
+    }
+
+    function _submitDelivery(
+        Escrow storage escrow,
+        uint256 escrowId,
+        bytes32 evidenceHash,
+        string calldata evidence
+    ) private {
+        if (escrow.state != State.Funded) revert InvalidState();
+        if (block.timestamp > escrow.deliveryDeadline) revert DeliveryWindowClosed();
+        if (evidenceHash == bytes32(0)) revert ZeroHash();
+
+        uint256 evidenceLength = bytes(evidence).length;
+        if (evidenceLength == 0 || evidenceLength > MAX_EVIDENCE_BYTES) revert EvidenceTooLarge();
+        if (keccak256(bytes(evidence)) != evidenceHash) revert HashMismatch();
+
+        uint64 reviewDeadline = uint64(block.timestamp) + escrow.reviewPeriod;
+        escrow.evidenceHash = evidenceHash;
+        escrow.evidence = evidence;
+        escrow.reviewDeadline = reviewDeadline;
+        escrow.state = State.Delivered;
+        delete mutualCancelProposer[escrowId];
+
+        emit DeliverySubmitted(escrowId, evidenceHash, reviewDeadline);
     }
 
     function _refund(Escrow storage escrow, uint256 escrowId, uint8 reason) private {
@@ -402,8 +586,31 @@ contract RelayEscrow is ReentrancyGuard {
         if (buyer == address(0)) revert InvalidAddress();
         uint256 amount = escrow.amount;
         escrow.state = State.Refunded;
+        delete mutualCancelProposer[escrowId];
         musdToken.safeTransfer(buyer, amount);
         emit EscrowRefunded(escrowId, buyer, amount, reason);
+    }
+
+    function _requireFundable(Escrow storage escrow, uint256 escrowId) private view {
+        uint256 predecessorId = predecessorOf[escrowId];
+        if (predecessorId != 0 && _escrows[predecessorId].state != State.Released) revert PredecessorNotReleased();
+        if (escrow.buyer != address(0) && !resolverAccepted[escrowId]) revert ResolverNotAccepted();
+    }
+
+    function _checkReviewExtension(Escrow storage escrow, uint64 newDeadline) private view {
+        if (newDeadline <= escrow.reviewDeadline) revert InvalidDeadline();
+        uint256 deliveredAt = uint256(escrow.reviewDeadline) - uint256(escrow.reviewPeriod);
+        if (uint256(newDeadline) > deliveredAt + MAX_REVIEW_PERIOD) revert InvalidReviewPeriod();
+    }
+
+    /// @dev Pays the resolver from a disputed escrow only. Release and refund paths do not call this.
+    function _takeResolverFee(Escrow storage escrow, uint256 escrowId) private {
+        uint256 fee = resolverFeeOf[escrowId];
+        if (fee == 0) return;
+        if (fee >= escrow.amount) revert ResolverFee();
+        escrow.amount -= fee;
+        musdToken.safeTransfer(escrow.resolver, fee);
+        emit ResolverFeePaid(escrowId, escrow.resolver, fee);
     }
 
     function _load(uint256 escrowId) private view returns (Escrow storage escrow) {

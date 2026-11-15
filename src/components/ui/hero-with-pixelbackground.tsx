@@ -43,7 +43,7 @@ export default function HeroSectionwithPixelBackground() {
           {env === "local" ? null : <MezoMark className="size-5" />}
           <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-faint">{place}</span>
           <span className="h-px w-8 bg-line" />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-faint">No protocol fee</span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-faint">0.50% seller fee</span>
         </motion.div>
 
         <h1 className="flex flex-col items-center gap-1 text-center font-display uppercase leading-[0.84] tracking-[-0.045em] text-ink">

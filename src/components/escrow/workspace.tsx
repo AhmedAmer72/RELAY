@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatUnits, type Hex } from "viem";
-import { useConnect, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
+import { useConnect, usePublicClient, useReadContract, useReadContracts, useSwitchChain, useWriteContract } from "wagmi";
 import { explorerAddressUrl, escrowPath } from "@/lib/chain/config";
 import type { Address } from "viem";
 import { erc20Abi } from "@/lib/contracts/erc20";
@@ -18,12 +18,22 @@ import { evaluateEscrow } from "@/lib/escrow/policy";
 import { panelFor, useChainEvents, useEscrow, useProtocol } from "@/hooks/use-escrow";
 import { useTrackedTx } from "@/hooks/use-tx";
 import { ActionPanel, AgreementCard, EscrowLinks, Timeline, TxStatus } from "@/components/escrow/views";
+import { TroveRepayPanel } from "@/components/escrow/repay-panel";
+import { StabilityPanel } from "@/components/escrow/stability-panel";
+import { TroveBorrowPanel } from "@/components/escrow/trove-panel";
 import { Button, Card, CopyButton, Dialog, ErrorPanel, ExternalLink, Field, Skeleton, controlClass } from "@/components/ui";
 
 const EXPECTED: Partial<Record<ActionId, EscrowState>> = {
   fund: "Funded",
   "fund-as-agent": "Funded",
   "submit-delivery": "Delivered",
+  "submit-as-agent": "Delivered",
+  "accept-mutual": "Refunded",
+  "accept-resolver": "Created",
+  "propose-extension": "Delivered",
+  "accept-extension": "Delivered",
+  "propose-mutual": "Funded",
+  "revoke-mutual": "Funded",
   release: "Released",
   "finalize-review": "Released",
   refund: "Refunded",
@@ -50,7 +60,11 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
   const [confirming, setConfirming] = useState<ActionId>();
   const [evidenceNote, setEvidenceNote] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [evidenceFile, setEvidenceFile] = useState("");
+  const [fileNote, setFileNote] = useState("");
   const [reason, setReason] = useState("");
+  const [disputeFile, setDisputeFile] = useState("");
+  const [extensionAt, setExtensionAt] = useState("");
   const [verified, setVerified] = useState<boolean>();
   const [origin, setOrigin] = useState("");
   const [feeLabel, setFeeLabel] = useState<string>();
@@ -60,6 +74,14 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
 
   const model = escrowQuery.model;
   const wallet = protocol.account.address;
+  const feeRead = useReadContract({
+    address: agreementContract,
+    abi: relayEscrowAbi,
+    functionName: "feeBps",
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(agreementContract), retry: false },
+  });
+  const feeBps = typeof feeRead.data === "bigint" ? feeRead.data : 0n;
   const agentRead = useReadContract({
     address: agreementContract,
     abi: relayEscrowAbi,
@@ -71,7 +93,75 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
     },
   });
   const agentAllowance = typeof agentRead.data === "bigint" ? agentRead.data : undefined;
-  const panel = model ? panelFor(model, protocol, partialSettlement, agentAllowance) : undefined;
+  const mutualProbe = useReadContract({
+    address: agreementContract,
+    abi: relayEscrowAbi,
+    functionName: "mutualCancelSupported",
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(agreementContract), retry: false },
+  });
+  const proposerRead = useReadContract({
+    address: agreementContract,
+    abi: relayEscrowAbi,
+    functionName: "mutualCancelProposer",
+    args: [id],
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(agreementContract && mutualProbe.isSuccess && model?.state === "Funded") },
+  });
+  const deliveryRead = useReadContract({
+    address: agreementContract,
+    abi: relayEscrowAbi,
+    functionName: "deliveryAgent",
+    args: model && wallet ? [model.seller, wallet] : undefined,
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(agreementContract && model && wallet && model.state === "Funded" && !sameAddress(wallet, model.seller)), retry: false },
+  });
+  const mutualCancel = mutualProbe.isSuccess;
+  const cancelProposer = typeof proposerRead.data === "string" ? proposerRead.data : undefined;
+  const deliveryAgent = deliveryRead.data === true;
+  const rules = useReadContracts({
+    contracts: agreementContract ? [
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "resolverAcceptanceSupported", chainId: protocol.chain.id },
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "resolverAccepted", args: [id], chainId: protocol.chain.id },
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "predecessorOf", args: [id], chainId: protocol.chain.id },
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "reviewExtensionSupported", chainId: protocol.chain.id },
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "reviewExtensionProposer", args: [id], chainId: protocol.chain.id },
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "reviewExtensionDeadline", args: [id], chainId: protocol.chain.id },
+      { address: agreementContract, abi: relayEscrowAbi, functionName: "resolverFeeOf", args: [id], chainId: protocol.chain.id },
+    ] : [],
+    query: { enabled: Boolean(agreementContract), retry: false },
+  });
+  const rule = (index: number) => rules.data?.[index]?.status === "success" ? rules.data[index].result : undefined;
+  const predecessorResult = rule(2);
+  const predecessorId = typeof predecessorResult === "bigint" ? predecessorResult : 0n;
+  const proposerResult = rule(4);
+  const extensionProposer = typeof proposerResult === "string" ? proposerResult : undefined;
+  const deadlineResult = rule(5);
+  const extensionDeadline = typeof deadlineResult === "bigint" ? Number(deadlineResult) : undefined;
+  const feeResult = rule(6);
+  const resolverFee = typeof feeResult === "bigint" ? feeResult : 0n;
+  const prior = useReadContract({
+    address: agreementContract,
+    abi: relayEscrowAbi,
+    functionName: "getEscrow",
+    args: [predecessorId],
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(agreementContract && predecessorId > 0n) },
+  });
+  const predecessorReleased = predecessorId === 0n || (prior.data ? parseEscrow(predecessorId, coerceRawEscrow(prior.data)).state === "Released" : false);
+  const ruleExtra = {
+    mutualCancel,
+    cancelProposer,
+    deliveryAgent,
+    resolverAcceptance: rules.data?.[0]?.status === "success",
+    resolverAccepted: rule(1) === true,
+    hasPredecessor: predecessorId > 0n,
+    predecessorReleased,
+    reviewExtension: rules.data?.[3]?.status === "success",
+    extensionProposer,
+    extensionDeadline,
+  };
+  const panel = model ? panelFor(model, protocol, partialSettlement, agentAllowance, ruleExtra) : undefined;
   const checkoutPath = escrowPath("checkout", id, agreementContract);
   const checkoutUrl = origin ? `${origin}${checkoutPath}` : checkoutPath;
 
@@ -142,6 +232,33 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
         nextAgentAllowance = undefined;
       }
     }
+    let nextMutual = mutualCancel;
+    let nextProposer = cancelProposer;
+    let nextDelivery = deliveryAgent;
+    if (mutualCancel) {
+      try {
+        nextProposer = await publicClient.readContract({
+          address: agreementContract,
+          abi: relayEscrowAbi,
+          functionName: "mutualCancelProposer",
+          args: [fresh.id],
+        });
+      } catch {
+        nextMutual = false;
+      }
+    }
+    if (protocol.account.address && !sameAddress(protocol.account.address, fresh.seller)) {
+      try {
+        nextDelivery = await publicClient.readContract({
+          address: agreementContract,
+          abi: relayEscrowAbi,
+          functionName: "deliveryAgent",
+          args: [fresh.seller, protocol.account.address],
+        });
+      } catch {
+        nextDelivery = false;
+      }
+    }
     const next = evaluateEscrow({
       escrow: fresh,
       wallet: protocol.account.address,
@@ -157,6 +274,16 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
       nativeBalance: protocol.nativeBalance,
       partialSettlement,
       agentAllowance: nextAgentAllowance,
+      mutualCancel: nextMutual,
+      cancelProposer: nextProposer,
+      deliveryAgent: nextDelivery,
+      resolverAcceptance: ruleExtra.resolverAcceptance,
+      resolverAccepted: ruleExtra.resolverAccepted,
+      hasPredecessor: ruleExtra.hasPredecessor,
+      predecessorReleased: ruleExtra.predecessorReleased,
+      reviewExtension: ruleExtra.reviewExtension,
+      extensionProposer: ruleExtra.extensionProposer,
+      extensionDeadline: ruleExtra.extensionDeadline,
     });
     const offered = [next.primary, ...next.secondary].some((item) => item?.id === action);
     if (!offered) {
@@ -167,7 +294,7 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
     return true;
   }
 
-  async function submit(action: ActionId, extra?: { evidenceJson?: string; evidenceHash?: Hex; reason?: string; reasonHash?: Hex; sellerAmount?: bigint }) {
+  async function submit(action: ActionId, extra?: { evidenceJson?: string; evidenceHash?: Hex; reason?: string; reasonHash?: Hex; sellerAmount?: bigint; extensionDeadline?: number }) {
     if (!model || !agreementContract) return;
     if (!(await preflight(action))) return;
     const call = buildCall(action, model, agreementContract, protocol.musd.address, extra);
@@ -193,6 +320,9 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
       }
       const expected = EXPECTED[action];
       setVerified(Boolean(fresh && expected && fresh.state === expected));
+      void proposerRead.refetch();
+      void rules.refetch();
+      void prior.refetch();
     });
   }
 
@@ -215,7 +345,7 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
       setConfirming(action);
       return;
     }
-    if (action === "submit-delivery" || action === "dispute") {
+    if (action === "submit-delivery" || action === "submit-as-agent" || action === "dispute" || action === "propose-extension") {
       if (!(await preflight(action))) return;
       setConfirming(action);
       return;
@@ -236,8 +366,8 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
     return <ErrorPanel title={missing ? "This agreement was not found on the escrow contract." : "The agreement could not be read."} detail="Check the agreement id, network, and contract address. A failed read is not an empty agreement." onRetry={() => void escrowQuery.refetch()} />;
   }
 
-  const evidence = validateEvidence(evidenceNote, evidenceUrl);
-  const dispute = validateReason(reason);
+  const evidence = validateEvidence(evidenceNote, evidenceUrl, evidenceFile || undefined);
+  const dispute = validateReason(reason, disputeFile || undefined);
   const shortfall = protocol.balance !== undefined && protocol.balance < model.amount ? model.amount - protocol.balance : undefined;
 
   return (
@@ -276,6 +406,22 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
           </Card>
         ) : null}
         {variant === "receipt" ? <ReceiptCard model={model} events={events.data?.items ?? []} /> : null}
+        {(model.state === "Released" || model.state === "Refunded" || model.state === "Split" || model.state === "Cancelled") && wallet && sameAddress(model.seller, wallet) ? (
+          <p className="text-sm"><a className="font-semibold text-brand" href={`/create?clone=${model.id.toString()}&escrow=${agreementContract}`}>Create a new agreement from these terms</a></p>
+        ) : null}
+        {variant === "receipt" && wallet ? (
+          <TroveRepayPanel chainId={protocol.chain.id} account={wallet} musd={protocol.musd.address} />
+        ) : null}
+        {variant === "receipt" && wallet && sameAddress(model.seller, wallet) && (model.state === "Released" || model.state === "Split") ? (
+          <StabilityPanel
+            chainId={protocol.chain.id}
+            account={wallet}
+            musd={protocol.musd.address}
+            amount={protocol.balance !== undefined && protocol.balance < model.amount - (model.amount * feeBps / 10_000n)
+              ? protocol.balance
+              : model.amount - (model.amount * feeBps / 10_000n)}
+          />
+        ) : null}
       </div>
       <div className="space-y-4">
         {variant !== "receipt" ? (
@@ -301,6 +447,16 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
             ) : null}
             {tx.phase.phase === "confirmed" && verified ? <p className="text-sm text-brand">The contract state matches this action.</p> : null}
             {panel ? <ActionPanel panel={panel} busy={isActive(tx.phase.phase)} onAction={(action) => void onAction(action)} /> : null}
+            {model.state === "Created" && wallet && (isZeroAddress(model.buyer) || sameAddress(model.buyer, wallet)) ? (
+              <TroveBorrowPanel
+                chainId={protocol.chain.id}
+                account={wallet}
+                shortfall={shortfall}
+                nativeBalance={protocol.nativeBalance}
+                chainMatches={protocol.chainMatches}
+                onBorrowed={async () => { await protocol.refetchBalances(); }}
+              />
+            ) : null}
             <Button variant="ghost" onClick={() => void refreshModel()}>Refresh agreement</Button>
           </Card>
         ) : null}
@@ -314,7 +470,7 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
         ) : null}
       </div>
 
-      <Dialog open={Boolean(confirming && confirming !== "submit-delivery" && confirming !== "dispute" && confirming !== "resolve-split")} title={confirmTitle(confirming)} onClose={() => setConfirming(undefined)}>
+      <Dialog open={Boolean(confirming && confirming !== "submit-delivery" && confirming !== "submit-as-agent" && confirming !== "dispute" && confirming !== "resolve-split" && confirming !== "propose-extension")} title={confirmTitle(confirming)} onClose={() => setConfirming(undefined)}>
         <div className="space-y-3 text-sm text-muted">
           <div className="rounded-2xl bg-raised px-4 py-5">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-faint">Amount</p>
@@ -322,13 +478,14 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
             <p className="num mt-2 text-xs text-faint">{formatBaseUnits(model.amount)} base units</p>
           </div>
           <p>{confirmBody(confirming, model.amount)}</p>
+          {resolverFee > 0n && (confirming === "fund" || confirming === "fund-as-agent") ? <p>A dispute settlement pays {formatMusd(resolverFee)} MUSD to the resolver before the remainder is settled. A release or refund does not.</p> : null}
           <p>Seller: <span className="num text-ink">{model.seller}</span></p>
           <p>Escrow: <span className="num text-ink">{agreementContract}</span></p>
           <p>Resolver: <span className="num text-ink">{shortAddress(model.resolver)}</span></p>
           <p>{RESOLVER_DISCLOSURE}</p>
           <p>{AUTO_RELEASE_DISCLOSURE}</p>
-          <p>{feeLabel ? `Network fee: ${feeLabel}. Not a protocol fee.` : "Your wallet shows the BTC network fee."}</p>
-          <p>{NO_FEE_DISCLOSURE}</p>
+          <p>{feeLabel ? `Network fee: ${feeLabel}.` : "Your wallet shows the BTC network fee."}</p>
+          <p>{feeBps > 0n ? `${(Number(feeBps) / 100).toFixed(2)}% when the seller is paid (${formatMusd(model.amount * feeBps / 10_000n)} MUSD on this amount). Refunds are whole.` : NO_FEE_DISCLOSURE}</p>
           <div className="flex gap-2">
             <Button onClick={() => { const action = confirming; setConfirming(undefined); if (action) void submit(action); }}>Confirm and sign</Button>
             <Button variant="secondary" onClick={() => setConfirming(undefined)}>Back</Button>
@@ -336,7 +493,7 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
         </div>
       </Dialog>
 
-      <Dialog open={confirming === "submit-delivery"} title="Submit delivery evidence" onClose={() => setConfirming(undefined)}>
+      <Dialog open={confirming === "submit-delivery" || confirming === "submit-as-agent"} title="Submit delivery evidence" onClose={() => setConfirming(undefined)}>
         <div className="space-y-3">
           <p className="text-sm text-muted">Public on-chain. No secrets or personal data.</p>
           <Field label="Delivery note" hint="At least 3 characters. Public on-chain." error={evidenceNote.trim() ? evidence.errors.note : undefined}>
@@ -345,8 +502,34 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
           <Field label="HTTPS link, optional" error={evidenceUrl.trim() ? evidence.errors.url : undefined}>
             <input className={controlClass} value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://" />
           </Field>
+          <Field label="File, optional" error={evidence.errors.file}>
+            <input className={controlClass} type="file" onChange={(event) => {
+              const file = event.target.files?.[0];
+              setEvidenceFile("");
+              setFileNote("");
+              if (!file) return;
+              if (file.size > 2 * 1024 * 1024) {
+                setFileNote("Choose a file of 2 MB or less.");
+                return;
+              }
+              void file.arrayBuffer().then(async (buffer) => {
+                const bytes = new Uint8Array(buffer);
+                const { contentId } = await import("@/lib/evidence/cid");
+                const cid = await contentId(bytes);
+                const response = await fetch("/api/evidence", { method: "POST", headers: { "content-type": "application/octet-stream" }, body: new Blob([bytes]) });
+                const body = await response.json() as { cid?: string; pinned?: boolean; error?: string };
+                if (!response.ok || body.cid !== cid) {
+                  setFileNote(body.error ?? "The file was not stored.");
+                  return;
+                }
+                setEvidenceFile(cid);
+                setFileNote(body.pinned ? `Pinned to IPFS as ${cid}.` : `Stored by content id on this host. It is not on public IPFS. ${cid}`);
+              }).catch(() => setFileNote("The file could not be read."));
+            }} />
+          </Field>
+          {fileNote ? <p className="text-sm text-muted">{fileNote}</p> : null}
           <p className="break-all text-xs text-faint">Evidence hash {evidence.evidenceHash}</p>
-          <Button disabled={!evidence.valid} onClick={() => { setConfirming(undefined); void submit("submit-delivery", { evidenceHash: evidence.evidenceHash, evidenceJson: evidence.json }); }}>Submit evidence</Button>
+          <Button disabled={!evidence.valid || (confirming !== "submit-delivery" && confirming !== "submit-as-agent")} onClick={() => { if (confirming !== "submit-delivery" && confirming !== "submit-as-agent") return; const chosen = confirming; setConfirming(undefined); void submit(chosen, { evidenceHash: evidence.evidenceHash, evidenceJson: evidence.json }); }}>Submit evidence</Button>
         </div>
       </Dialog>
 
@@ -362,12 +545,44 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
         />
       </Dialog>
 
+      <Dialog open={confirming === "propose-extension"} title="Propose a later review deadline" onClose={() => setConfirming(undefined)}>
+        <div className="space-y-3">
+          <p className="text-sm text-muted">The other party must accept. The new deadline cannot be more than 30 days after delivery.</p>
+          <Field label="New review deadline">
+            <input className={controlClass} type="datetime-local" value={extensionAt} onChange={(event) => setExtensionAt(event.target.value)} />
+          </Field>
+          <Button disabled={!extensionAt} onClick={() => {
+            const stamp = Math.floor(new Date(extensionAt).getTime() / 1000);
+            if (!Number.isFinite(stamp) || stamp <= model.reviewDeadline) return;
+            setConfirming(undefined);
+            void submit("propose-extension", { extensionDeadline: stamp });
+          }}>Propose deadline</Button>
+        </div>
+      </Dialog>
+
       <Dialog open={confirming === "dispute"} title="Raise a dispute" onClose={() => setConfirming(undefined)}>
         <div className="space-y-3">
           <p className="text-sm text-muted">Public on-chain. Pauses release and refund.</p>
           <Field label="Reason" hint="Public on-chain." error={reason.trim() && dispute.ok === false ? dispute.error : undefined}>
             <textarea className={controlClass} value={reason} onChange={(event) => setReason(event.target.value)} rows={4} />
           </Field>
+          <Field label="File, optional">
+            <input className={controlClass} type="file" onChange={(event) => {
+              const file = event.target.files?.[0];
+              setDisputeFile("");
+              if (!file) return;
+              if (file.size > 2 * 1024 * 1024) return;
+              void file.arrayBuffer().then(async (buffer) => {
+                const bytes = new Uint8Array(buffer);
+                const { contentId } = await import("@/lib/evidence/cid");
+                const cid = await contentId(bytes);
+                const response = await fetch("/api/evidence", { method: "POST", headers: { "content-type": "application/octet-stream" }, body: new Blob([bytes]) });
+                const body = await response.json() as { cid?: string };
+                if (response.ok && body.cid === cid) setDisputeFile(cid);
+              });
+            }} />
+          </Field>
+          {disputeFile ? <p className="break-all text-xs text-faint">File {disputeFile}. Stored by content id. It is pinned only when an IPFS service accepts it.</p> : null}
           <Button disabled={!dispute.ok} onClick={() => { if (!dispute.ok) return; setConfirming(undefined); void submit("dispute", { reason: dispute.reason, reasonHash: dispute.reasonHash }); }}>Submit dispute</Button>
         </div>
       </Dialog>
@@ -400,6 +615,11 @@ function confirmTitle(action?: ActionId) {
     case "approve": return "Approve MUSD";
     case "fund": return "Fund escrow";
     case "fund-as-agent": return "Fund with agent budget";
+    case "propose-mutual": return "Propose a full refund";
+    case "revoke-mutual": return "Withdraw the refund request";
+    case "accept-mutual": return "Accept the full refund";
+    case "accept-resolver": return "Accept the resolver";
+    case "accept-extension": return "Accept the later review deadline";
     case "release": return "Release funds";
     case "refund": return "Refund after missed deadline";
     case "finalize-review": return "Finalize payment to seller";
@@ -419,6 +639,16 @@ function confirmBody(action: ActionId | undefined, amount: bigint) {
       return `Locks ${value} MUSD under this agreement.`;
     case "fund-as-agent":
       return `Pulls ${value} MUSD from the buyer. You stay an agent.`;
+    case "propose-mutual":
+      return "Asks the other party for a full refund. Nothing moves until they accept.";
+    case "revoke-mutual":
+      return "Withdraws your refund request. The funds stay in escrow.";
+    case "accept-mutual":
+      return "Returns the full amount to the buyer. The seller fee is not charged.";
+    case "accept-resolver":
+      return "Confirms the resolver. No MUSD moves until you fund.";
+    case "accept-extension":
+      return "Moves the review deadline to the proposed time. No tokens move.";
     case "release":
       return "Pays the seller. Cannot be undone.";
     case "refund":
@@ -441,7 +671,7 @@ function buildCall(
   model: { id: bigint; amount: bigint },
   escrowAddress: `0x${string}`,
   musdAddress?: `0x${string}`,
-  extra?: { evidenceJson?: string; evidenceHash?: Hex; reason?: string; reasonHash?: Hex; sellerAmount?: bigint },
+  extra?: { evidenceJson?: string; evidenceHash?: Hex; reason?: string; reasonHash?: Hex; sellerAmount?: bigint; extensionDeadline?: number },
 ) {
   const escrow = { address: escrowAddress, abi: relayEscrowAbi };
   switch (action) {
@@ -462,6 +692,20 @@ function buildCall(
       return { label: "Refund", ...escrow, functionName: "refundAfterMissedDeadline", args: [model.id] };
     case "submit-delivery":
       return { label: "Submit delivery", ...escrow, functionName: "submitDelivery", args: [model.id, extra?.evidenceHash, extra?.evidenceJson] };
+    case "submit-as-agent":
+      return { label: "Submit delivery as agent", ...escrow, functionName: "submitDeliveryAsAgent", args: [model.id, extra?.evidenceHash, extra?.evidenceJson] };
+    case "propose-mutual":
+      return { label: "Propose full refund", ...escrow, functionName: "proposeMutualCancel", args: [model.id] };
+    case "revoke-mutual":
+      return { label: "Withdraw refund request", ...escrow, functionName: "revokeMutualCancel", args: [model.id] };
+    case "accept-mutual":
+      return { label: "Accept full refund", ...escrow, functionName: "acceptMutualCancel", args: [model.id] };
+    case "accept-resolver":
+      return { label: "Accept resolver", ...escrow, functionName: "acceptResolver", args: [model.id] };
+    case "propose-extension":
+      return { label: "Propose review extension", ...escrow, functionName: "proposeReviewExtension", args: [model.id, extra?.extensionDeadline ?? 0] };
+    case "accept-extension":
+      return { label: "Accept review extension", ...escrow, functionName: "acceptReviewExtension", args: [model.id] };
     case "dispute":
       return { label: "Raise dispute", ...escrow, functionName: "raiseDispute", args: [model.id, extra?.reasonHash, extra?.reason] };
     case "resolve-seller":

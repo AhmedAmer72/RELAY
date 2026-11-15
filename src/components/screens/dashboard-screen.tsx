@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSignMessage } from "wagmi";
 import { escrowPath, VERIFIED_TESTNET } from "@/lib/chain/config";
 import { formatMusd, sameAddress, shortAddress } from "@/lib/escrow/format";
-import { formatRelative } from "@/lib/escrow/time";
+import { formatRelative, formatTimestamp } from "@/lib/escrow/time";
 import { requiresUserAction } from "@/lib/escrow/policy";
 import type { EscrowModel } from "@/lib/escrow/types";
 import { getAddress, isAddress, type Address } from "viem";
@@ -30,6 +32,9 @@ export function DashboardScreen() {
   const [sellerLookup, setSellerLookup] = useState("");
   const [sellerError, setSellerError] = useState("");
   const router = useRouter();
+  const { signMessageAsync } = useSignMessage();
+  const [alertUrl, setAlertUrl] = useState("");
+  const [alertNote, setAlertNote] = useState("");
   const list = useRecentEscrows(limit);
   const wallet = protocol.account.address;
 
@@ -169,6 +174,24 @@ export function DashboardScreen() {
                 {list.isFetching ? <span className="mr-2 inline-flex items-center gap-2"><span className="live-dot" aria-hidden />Updating</span> : null}
                 {list.truncated ? `Totals use the ${limit} most recent agreements, not the full history.` : "Totals use every agreement found on the configured contract."} {protocol.now === undefined ? "Awaiting a network timestamp before action counts are shown." : null}
               </p>
+              {ready && protocol.now !== undefined ? (
+                <Card className="space-y-3">
+                  <h2 className="text-lg font-semibold">Closing within 24 hours</h2>
+                  {list.truncated ? <p className="text-sm text-muted">This watch covers only the loaded agreements, not the full history.</p> : null}
+                  <DeadlineWatch items={mine} now={protocol.now} />
+                </Card>
+              ) : null}
+              <Card className="space-y-3">
+                <h2 className="text-lg font-semibold">Your agreements</h2>
+                <p className="text-sm text-muted">Download the loaded seller agreements and the indexed seller fees. An alert posts only events where this wallet is the buyer or seller.</p>
+                <Button variant="secondary" disabled={!wallet} onClick={() => void exportSellerCsv(mine, wallet)}>Download CSV</Button>
+                <Field label="https alert URL">
+                  <input className={controlClass} value={alertUrl} onChange={(event) => setAlertUrl(event.target.value)} placeholder="https://example.com/relay" />
+                </Field>
+                {alertNote ? <p className="break-all text-sm text-muted">{alertNote}</p> : null}
+                <Button disabled={!wallet || !alertUrl.startsWith("https://")} onClick={() => void saveAlert(wallet, alertUrl, signMessageAsync, setAlertNote)}>Sign alert</Button>
+                <WalletEvents wallet={wallet} agreements={mine} />
+              </Card>
               {actionCount > 0 && protocol.now !== undefined ? (
                 <button
                   type="button"
@@ -296,6 +319,98 @@ function EscrowFeedItem({ escrow, wallet, now, index }: { escrow: EscrowModel & 
         </div>
       </div>
     </article>
+  );
+}
+
+async function exportSellerCsv(items: (EscrowModel & { contractAddress?: Address })[], wallet?: string) {
+  const response = await fetch("/api/activity?name=ProtocolFeePaid");
+  const body = await response.json() as { items?: { contractAddress?: string; escrowId?: string; args?: { amount?: string } }[] };
+  const fees = new Map<string, bigint>();
+  for (const event of body.items ?? []) {
+    if (!event.contractAddress || !event.escrowId || !event.args?.amount) continue;
+    const key = `${event.contractAddress.toLowerCase()}:${event.escrowId}`;
+    fees.set(key, (fees.get(key) ?? 0n) + BigInt(event.args.amount));
+  }
+  const lines = ["id,contract,state,amount,buyer,seller,fee"];
+  for (const escrow of items.filter((item) => sameAddress(item.seller, wallet))) {
+    const fee = fees.get(`${(escrow.contractAddress ?? "").toLowerCase()}:${escrow.id.toString()}`) ?? 0n;
+    lines.push([escrow.id.toString(), escrow.contractAddress ?? "", escrow.state, escrow.amount.toString(), escrow.buyer, escrow.seller, fee.toString()].join(","));
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "relay-agreements.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function saveAlert(
+  wallet: Address | undefined,
+  alertUrl: string,
+  signMessageAsync: (args: { message: string }) => Promise<string>,
+  setAlertNote: (value: string) => void,
+) {
+  if (!wallet) return;
+  try {
+    const signature = await signMessageAsync({ message: `RELAY alert\n${alertUrl.trim()}` });
+    const response = await fetch("/api/alerts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: alertUrl.trim(), owner: wallet, signature }),
+    });
+    const body = await response.json() as { secret?: string; error?: string };
+    if (!response.ok || !body.secret) throw new Error(body.error ?? "The alert was not saved.");
+    setAlertNote(`Alert saved. Secret, shown once: ${body.secret}`);
+  } catch (error) {
+    setAlertNote(error instanceof Error ? error.message : "The alert was not saved.");
+  }
+}
+
+function WalletEvents({ wallet, agreements }: { wallet?: Address; agreements: (EscrowModel & { contractAddress?: Address })[] }) {
+  const events = useQuery({
+    queryKey: ["wallet-events", wallet],
+    enabled: Boolean(wallet),
+    queryFn: async () => {
+      const response = await fetch("/api/activity");
+      if (!response.ok) throw new Error("Events could not be read.");
+      return await response.json() as { items?: { name: string; escrowId?: string; contractAddress?: string; transactionHash?: string }[]; error?: string };
+    },
+  });
+  const mine = new Set(agreements.filter((escrow) => sameAddress(escrow.seller, wallet) || sameAddress(escrow.buyer, wallet)).map((escrow) => `${(escrow.contractAddress ?? "").toLowerCase()}:${escrow.id.toString()}`));
+  const items = (events.data?.items ?? []).filter((event) => event.contractAddress && event.escrowId && mine.has(`${event.contractAddress.toLowerCase()}:${event.escrowId}`)).slice(0, 8);
+  if (events.isError || events.data?.error) return <p className="text-sm text-warning">Your events could not be read. This is not an empty history.</p>;
+  if (items.length === 0) return <p className="text-sm text-muted">No indexed events for this wallet in the loaded agreements yet.</p>;
+  return (
+    <ul className="space-y-2 text-sm">
+      {items.map((event) => <li key={`${event.transactionHash}-${event.name}`}>{event.name} · agreement {event.escrowId}</li>)}
+    </ul>
+  );
+}
+
+function deadlineKind(escrow: EscrowModel, now: number) {
+  const limit = now + 86_400;
+  if (escrow.state === "Created" && escrow.fundingDeadline >= now && escrow.fundingDeadline <= limit) return { label: "Funding deadline", at: escrow.fundingDeadline };
+  if (escrow.state === "Funded" && escrow.deliveryDeadline >= now && escrow.deliveryDeadline <= limit) return { label: "Delivery deadline", at: escrow.deliveryDeadline };
+  if (escrow.state === "Delivered" && escrow.reviewDeadline >= now && escrow.reviewDeadline <= limit) return { label: "Review deadline", at: escrow.reviewDeadline };
+  return undefined;
+}
+
+function DeadlineWatch({ items, now }: { items: (EscrowModel & { contractAddress?: Address })[]; now: number }) {
+  const rows = items.flatMap((escrow) => {
+    const kind = deadlineKind(escrow, now);
+    return kind ? [{ escrow, ...kind }] : [];
+  });
+  if (rows.length === 0) return <p className="text-sm text-muted">Nothing in the loaded list closes within 24 hours.</p>;
+  return (
+    <ul className="space-y-2">
+      {rows.map(({ escrow, label, at }) => (
+        <li key={`${escrow.contractAddress ?? "primary"}-${escrow.id.toString()}`} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm">
+          <span>Agreement #{escrow.id.toString()} · {label} · {formatTimestamp(at)}</span>
+          <Link className="font-semibold text-brand" href={escrowPath("escrows", escrow.id, escrow.contractAddress)}>Open</Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

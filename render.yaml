@@ -25,10 +25,12 @@ services:
       - key: NEXT_PUBLIC_MUSD_TESTNET_ADDRESS
         value: "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503"
       - key: NEXT_PUBLIC_ESCROW_TESTNET_ADDRESS
-        value: "0x22535C947Fd951bbC6C03f8D8A1159ad3a159c46"
+        value: "0x7b31489D0da4b745E26689647FC1514071De3fD4"
       - key: NEXT_PUBLIC_ESCROW_LEGACY_ADDRESS
         value: "0xcf6a53b0A22989Ad6B1834C7844CfB9B0d3A9125"
       - key: NEXT_PUBLIC_EXPLORER_BASE_URL
         value: https://explorer.test.mezo.org
       - key: NEXT_PUBLIC_ESCROW_DEPLOY_BLOCK
         value: "16358867"
+      - key: RELAY_DATA_DIR
+        value: data

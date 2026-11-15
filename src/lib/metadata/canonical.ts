@@ -20,6 +20,7 @@ export type EvidenceMetadata = {
   v: 1;
   note: string;
   url: string;
+  file?: string;
 };
 
 export function hashUtf8(value: string): Hex {
@@ -44,8 +45,9 @@ export function buildMetadata(input: { title: string; description: string; terms
   return { json, termsHash, metadataHash: hashUtf8(json), metadata };
 }
 
-export function buildEvidence(input: { note: string; url: string }) {
+export function buildEvidence(input: { note: string; url: string; file?: string }) {
   const evidence: EvidenceMetadata = { v: 1, note: input.note, url: input.url };
+  if (input.file) evidence.file = input.file;
   const json = JSON.stringify(evidence);
   return { json, evidenceHash: hashUtf8(json), evidence };
 }
@@ -96,7 +98,7 @@ export function verifyEvidence(raw: string, evidenceHash: Hex): { verified: bool
   if (hashUtf8(raw) !== evidenceHash) problems.push("Delivery evidence could not be verified against the on-chain hash.");
   try {
     const parsed = JSON.parse(raw) as Partial<EvidenceMetadata>;
-    if (parsed.v !== 1 || typeof parsed.note !== "string" || typeof parsed.url !== "string") {
+    if (parsed.v !== 1 || typeof parsed.note !== "string" || typeof parsed.url !== "string" || (parsed.file !== undefined && !/^b[a-z2-7]{20,}$/.test(parsed.file))) {
       problems.push("The evidence record does not match the expected format.");
       return { verified: false, problems, evidence: null };
     }

@@ -264,8 +264,8 @@ export function LandingScreen() {
         <p className="mx-auto max-w-2xl text-center text-base text-muted sm:text-lg">{FUNDS_DISCLOSURE} {NO_FEE_DISCLOSURE}</p>
         <div className="flex items-center justify-center rounded-[32px] bg-meadow px-6 py-12 sm:py-16">
           <div className="text-center">
-            <p className="display text-[clamp(3rem,6vw,5.5rem)] uppercase leading-[0.86]">0 protocol fee</p>
-            <p className="mt-3 text-base text-ink/80 sm:text-lg">The wallet still shows the network fee in BTC before you sign. RELAY does not invent that number.</p>
+            <p className="display text-[clamp(3rem,6vw,5.5rem)] uppercase leading-[0.86]">0.50% seller fee</p>
+            <p className="mt-3 text-base text-ink/80 sm:text-lg">Taken only when the seller is paid. Refunds are whole. The wallet still shows the BTC network fee.</p>
           </div>
         </div>
         <div className="grid w-full grid-cols-3 gap-3 text-left sm:gap-4">
@@ -345,7 +345,7 @@ export function LandingScreen() {
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
             <div className="grid grid-cols-3 gap-3 border-b border-line pb-4 sm:gap-4 sm:pb-5">
               {[
-                ["No protocol fee", "This version adds no fee of its own. Your wallet shows the network fee in BTC."],
+                ["0.50% seller fee", "Taken only when the seller is paid. Refunds are whole. The wallet shows the BTC network fee."],
                 ["Named buyer or open link", "A named buyer is the funder. An open link lets the first allowed funder become the buyer."],
                 ["No admin sweep", "There is no key in this app that can withdraw funds from the escrow."],
               ].map(([title, copy]) => (

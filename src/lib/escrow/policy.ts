@@ -18,6 +18,16 @@ export type PolicyInput = {
   nativeBalance?: bigint;
   partialSettlement?: boolean;
   agentAllowance?: bigint;
+  mutualCancel?: boolean;
+  cancelProposer?: Address;
+  deliveryAgent?: boolean;
+  resolverAcceptance?: boolean;
+  resolverAccepted?: boolean;
+  hasPredecessor?: boolean;
+  predecessorReleased?: boolean;
+  reviewExtension?: boolean;
+  extensionProposer?: Address;
+  extensionDeadline?: number;
 };
 
 function action(partial: ActionAvailability): ActionAvailability {
@@ -120,6 +130,8 @@ export function evaluateEscrow(input: PolicyInput): PanelModel {
     }
     if (wallet && open && (seller || resolver)) notices.push("Seller and resolver cannot fund an open checkout.");
     if (!escrow.metadataVerified) notices.push("Funding stays off until the agreement hash matches.");
+    const waitingForResolver = Boolean(input.resolverAcceptance && !open && !input.resolverAccepted);
+    const waitingForStage = Boolean(input.hasPredecessor && !input.predecessorReleased);
 
     if (wallet && (seller || expired) && timeKnown) {
       secondary.push(action({
@@ -131,8 +143,20 @@ export function evaluateEscrow(input: PolicyInput): PanelModel {
     }
 
     if (wallet && eligibleFunder && windowOpen && escrow.metadataVerified && tokenReady) {
+      if (waitingForResolver) notices.push("The named buyer must accept the resolver before funding.");
+      if (waitingForStage) notices.push("The previous milestone must be released before this one can be funded.");
+      if (waitingForResolver && buyer) {
+        setPrimary(action({
+          id: "accept-resolver",
+          label: "Accept resolver",
+          description: "Confirms this resolver before any MUSD moves.",
+          tone: "primary",
+        }));
+      }
       if (input.balance === undefined || input.allowance === undefined) {
         notices.push("Checking your MUSD balance and approval.");
+      } else if (waitingForResolver || waitingForStage) {
+        notices.push("Funding stays off until the requirement above is met.");
       } else if (input.balance < escrow.amount) {
         notices.push("You do not have enough MUSD to fund this invoice.");
       } else if (input.allowance < escrow.amount) {
@@ -154,7 +178,7 @@ export function evaluateEscrow(input: PolicyInput): PanelModel {
       notices.push("Checking the MUSD token on this network.");
     }
 
-    if (agentCandidate && windowOpen && escrow.metadataVerified && tokenReady && agentBudget !== undefined && agentBudget > 0n) {
+    if (agentCandidate && windowOpen && escrow.metadataVerified && tokenReady && agentBudget !== undefined && agentBudget > 0n && !waitingForResolver && !waitingForStage) {
       if (agentBudget < escrow.amount) {
         notices.push("Your agent budget does not cover this invoice.");
       } else if (!primary) {
@@ -179,6 +203,42 @@ export function evaluateEscrow(input: PolicyInput): PanelModel {
         description: EVIDENCE_HINT,
         tone: "primary",
       }));
+    }
+    if (input.deliveryAgent && wallet && !seller && !buyer && !resolver && deliveryOpen) {
+      const deliveryAction = action({
+        id: "submit-as-agent",
+        label: "Submit delivery as agent",
+        description: "Submits the seller's evidence. You cannot release, refund, or dispute.",
+        tone: "primary",
+      });
+      if (primary) secondary.push(deliveryAction);
+      else setPrimary(deliveryAction);
+    }
+    if (input.mutualCancel && wallet && (buyer || seller)) {
+      const proposer = input.cancelProposer;
+      const proposed = Boolean(proposer) && !isZeroAddress(proposer);
+      if (proposed && sameAddress(proposer, wallet)) {
+        secondary.push(action({
+          id: "revoke-mutual",
+          label: "Withdraw refund request",
+          description: "Leaves the funds in escrow.",
+          tone: "secondary",
+        }));
+      } else if (proposed) {
+        secondary.push(action({
+          id: "accept-mutual",
+          label: "Accept full refund",
+          description: "Returns the full amount to the buyer. No seller fee.",
+          tone: "danger",
+        }));
+      } else {
+        secondary.push(action({
+          id: "propose-mutual",
+          label: "Propose a full refund",
+          description: "The other party must accept. Nothing moves yet.",
+          tone: "secondary",
+        }));
+      }
     }
     if (buyer && deliveryMissed) {
       setPrimary(action({
@@ -220,6 +280,27 @@ export function evaluateEscrow(input: PolicyInput): PanelModel {
         tone: "danger",
       }));
       if (!buyer) notices.push("The buyer can release during review.");
+    }
+    if (input.reviewExtension && wallet && (buyer || seller) && reviewOpen) {
+      const proposer = input.extensionProposer;
+      const proposed = Boolean(proposer) && !isZeroAddress(proposer) && (input.extensionDeadline ?? 0) > escrow.reviewDeadline;
+      if (proposed && sameAddress(proposer, wallet)) {
+        notices.push("The other party can accept the later review deadline.");
+      } else if (proposed) {
+        secondary.push(action({
+          id: "accept-extension",
+          label: "Accept later review deadline",
+          description: "Moves the review deadline. No tokens move.",
+          tone: "secondary",
+        }));
+      } else {
+        secondary.push(action({
+          id: "propose-extension",
+          label: "Propose a later review deadline",
+          description: "The other party must accept. The window cannot pass 30 days from delivery.",
+          tone: "secondary",
+        }));
+      }
     }
     if (reviewElapsed && wallet) {
       setPrimary(action({

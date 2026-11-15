@@ -52,7 +52,7 @@ async function deployFixture() {
   const [seller, buyer, resolver, outsider, donor] = await ethers.getSigners();
   const musd = await ethers.deployContract("MockMUSD");
   await musd.waitForDeployment();
-  const escrow = await ethers.deployContract("RelayEscrow", [await musd.getAddress()]);
+  const escrow = await ethers.deployContract("RelayEscrow", [await musd.getAddress(), donor.address]);
   await escrow.waitForDeployment();
   const amount = ethers.parseEther("50");
   await musd.mint(buyer.address, ethers.parseEther("1000"));
@@ -86,6 +86,8 @@ async function createAgreement(
       meta.termsHash,
       meta.metadataHash,
       meta.metadata,
+      0,
+      0,
     );
   const receipt = await tx.wait();
   const parsed = receipt?.logs
@@ -110,6 +112,8 @@ async function createAgreement(
 
 async function fund(musd: Contract, escrow: Contract, buyer: Signer, id: bigint, amount: bigint) {
   await musd.connect(buyer).approve(await escrow.getAddress(), amount);
+  const stored = await escrow.getEscrow(id);
+  if (stored.buyer !== ethers.ZeroAddress) await escrow.connect(buyer).acceptResolver(id);
   return escrow.connect(buyer).fundEscrow(id);
 }
 
@@ -147,7 +151,7 @@ describe("RelayEscrow", function () {
   });
 
   it("rejects invalid creation parameters", async function () {
-    const { escrow, seller, buyer, resolver, outsider, amount } = await deployFixture();
+    const { escrow, seller, buyer, resolver, outsider, donor, musd, amount } = await deployFixture();
     const latest = BigInt(await time.latest());
     const funding = latest + BigInt(DAY);
     const delivery = funding + BigInt(MIN_GAP);
@@ -164,20 +168,23 @@ describe("RelayEscrow", function () {
       meta.metadata,
     ] as const;
 
-    await expect(escrow.connect(seller).createEscrow(base[0], base[1], 0, base[3], base[4], base[5], base[6], base[7], base[8])).to.be.revertedWithCustomError(escrow, "ZeroAmount");
-    await expect(escrow.connect(seller).createEscrow(seller.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "BuyerIsSeller");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, ethers.ZeroAddress, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "InvalidAddress");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, seller.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "ResolverIsParty");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, buyer.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "ResolverIsParty");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW - 1, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "InvalidReviewPeriod");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MAX_REVIEW + 1, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "InvalidReviewPeriod");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, latest, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "InvalidDeadline");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, funding + BigInt(MIN_GAP) - 1n, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "InvalidDeadline");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, ethers.ZeroHash, meta.metadataHash, meta.metadata)).to.be.revertedWithCustomError(escrow, "ZeroHash");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, hashText("other"), meta.metadata)).to.be.revertedWithCustomError(escrow, "HashMismatch");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, "")).to.be.revertedWithCustomError(escrow, "InvalidMetadata");
-    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, hashText("x".repeat(2049)), "x".repeat(2049))).to.be.revertedWithCustomError(escrow, "InvalidMetadata");
-    await expect(ethers.deployContract("RelayEscrow", [ethers.ZeroAddress])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    await expect(escrow.connect(seller).createEscrow(base[0], base[1], 0, base[3], base[4], base[5], base[6], base[7], base[8], 0, 0)).to.be.revertedWithCustomError(escrow, "ZeroAmount");
+    await expect(escrow.connect(seller).createEscrow(seller.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "BuyerIsSeller");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, ethers.ZeroAddress, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, seller.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "ResolverIsParty");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, buyer.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "ResolverIsParty");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW - 1, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidReviewPeriod");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MAX_REVIEW + 1, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidReviewPeriod");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, latest, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidDeadline");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, funding + BigInt(MIN_GAP) - 1n, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidDeadline");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, ethers.ZeroHash, meta.metadataHash, meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "ZeroHash");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, hashText("other"), meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "HashMismatch");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, "", 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidMetadata");
+    await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, hashText("x".repeat(2049)), "x".repeat(2049), 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidMetadata");
+    await expect(ethers.deployContract("RelayEscrow", [ethers.ZeroAddress, outsider.address])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    await expect(ethers.deployContract("RelayEscrow", [await musd.getAddress(), ethers.ZeroAddress])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    expect(await escrow.feeBps()).to.equal(50n);
+    expect(await escrow.feeRecipient()).to.equal(donor.address);
     await expect(escrow.getEscrow(0)).to.be.revertedWithCustomError(escrow, "EscrowNotFound");
     await expect(escrow.getEscrow(1)).to.be.revertedWithCustomError(escrow, "EscrowNotFound");
     expect(outsider.address).to.not.equal(seller.address);
@@ -191,14 +198,14 @@ describe("RelayEscrow", function () {
     const funding = delivery - BigInt(MIN_GAP);
     const meta = buildMeta();
     await expect(
-      escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MAX_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata),
+      escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MAX_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0),
     ).to.emit(escrow, "EscrowCreated");
 
     const later = BigInt(await time.latest()) + 20n;
     await time.setNextBlockTimestamp(Number(later));
     const tooLate = later + BigInt(MAX_HORIZON) + 1n;
     await expect(
-      escrow.connect(seller).createEscrow(ethers.ZeroAddress, resolver.address, amount, tooLate - BigInt(MIN_GAP), tooLate, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata),
+      escrow.connect(seller).createEscrow(ethers.ZeroAddress, resolver.address, amount, tooLate - BigInt(MIN_GAP), tooLate, MIN_REVIEW, meta.termsHash, meta.metadataHash, meta.metadata, 0, 0),
     ).to.be.revertedWithCustomError(escrow, "InvalidDeadline");
   });
 
@@ -222,11 +229,12 @@ describe("RelayEscrow", function () {
 
     const fee = await ethers.deployContract("FeeOnTransferToken");
     await fee.waitForDeployment();
-    const feeEscrow = await ethers.deployContract("RelayEscrow", [await fee.getAddress()]);
+    const feeEscrow = await ethers.deployContract("RelayEscrow", [await fee.getAddress(), outsider.address]);
     await feeEscrow.waitForDeployment();
     await fee.mint(buyer.address, amount);
     const feeCreated = await createAgreement(feeEscrow, seller, resolver, buyer.address, amount);
     await fee.connect(buyer).approve(await feeEscrow.getAddress(), amount);
+    await feeEscrow.connect(buyer).acceptResolver(feeCreated.id);
     await expect(feeEscrow.connect(buyer).fundEscrow(feeCreated.id)).to.be.revertedWithCustomError(feeEscrow, "UnexpectedTokenAmount");
     expect((await feeEscrow.getEscrow(feeCreated.id)).state).to.equal(STATE.Created);
     expect(await fee.balanceOf(buyer.address)).to.equal(amount);
@@ -247,7 +255,7 @@ describe("RelayEscrow", function () {
   });
 
   it("releases the full amount when the buyer accepts delivery", async function () {
-    const { escrow, seller, buyer, resolver, outsider, musd, amount } = await deployFixture();
+    const { escrow, seller, buyer, resolver, outsider, donor, musd, amount } = await deployFixture();
     const created = await createAgreement(escrow, seller, resolver, buyer.address, amount);
     await fund(musd, escrow, buyer, created.id, amount);
     const evidence = buildEvidence();
@@ -266,10 +274,11 @@ describe("RelayEscrow", function () {
     await expect(escrow.connect(outsider).releaseToSeller(created.id)).to.be.revertedWithCustomError(escrow, "NotBuyer");
     await expect(escrow.connect(buyer).refundAfterMissedDeadline(created.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
 
+    const fee = await escrow.protocolFee(amount);
     await expect(escrow.connect(buyer).releaseToSeller(created.id)).to.changeTokenBalances(
       musd,
-      [await escrow.getAddress(), seller.address],
-      [-amount, amount],
+      [await escrow.getAddress(), seller.address, donor.address],
+      [-amount, amount - fee, fee],
     );
     expect((await escrow.getEscrow(created.id)).state).to.equal(STATE.Released);
     await expect(escrow.connect(buyer).releaseToSeller(created.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
@@ -335,7 +344,7 @@ describe("RelayEscrow", function () {
   });
 
   it("auto-releases to the seller after the review window and not before", async function () {
-    const { escrow, seller, buyer, resolver, outsider, musd, amount } = await deployFixture();
+    const { escrow, seller, buyer, resolver, outsider, donor, musd, amount } = await deployFixture();
     const created = await createAgreement(escrow, seller, resolver, buyer.address, amount, { review: MIN_REVIEW });
     await fund(musd, escrow, buyer, created.id, amount);
     const evidence = buildEvidence();
@@ -372,10 +381,11 @@ describe("RelayEscrow", function () {
     await expect(escrow.connect(buyer).releaseToSeller(elapsed.id, { gasLimit: 500_000 })).to.be.revertedWithCustomError(escrow, "ReviewWindowClosed");
     await expect(escrow.connect(buyer).raiseDispute(elapsed.id, hashText(reason), reason, { gasLimit: 500_000 })).to.be.revertedWithCustomError(escrow, "ReviewWindowClosed");
     const outsiderBefore = await musd.balanceOf(outsider.address);
+    const fee = await escrow.protocolFee(amount);
     await expect(escrow.connect(outsider).releaseAfterReviewWindow(elapsed.id)).to.changeTokenBalances(
       musd,
-      [await escrow.getAddress(), seller.address],
-      [-amount, amount],
+      [await escrow.getAddress(), seller.address, donor.address],
+      [-amount, amount - fee, fee],
     );
     expect(await musd.balanceOf(outsider.address)).to.equal(outsiderBefore);
     expect((await escrow.getEscrow(elapsed.id)).state).to.equal(STATE.Released);
@@ -383,7 +393,7 @@ describe("RelayEscrow", function () {
   });
 
   it("lets only the stored resolver settle a dispute, once, for the full amount", async function () {
-    const { escrow, seller, buyer, resolver, outsider, musd, amount } = await deployFixture();
+    const { escrow, seller, buyer, resolver, outsider, donor, musd, amount } = await deployFixture();
     const created = await createAgreement(escrow, seller, resolver, buyer.address, amount);
     await fund(musd, escrow, buyer, created.id, amount);
     await expect(escrow.connect(buyer).raiseDispute(created.id, hashText("too early"), "too early")).to.be.revertedWithCustomError(escrow, "InvalidState");
@@ -412,16 +422,17 @@ describe("RelayEscrow", function () {
     await escrow.connect(seller).submitDelivery(paySeller.id, evidence.evidenceHash, evidence.evidence);
     await escrow.connect(seller).raiseDispute(paySeller.id, hashText(reason), reason);
     await expect(resolver).to.not.equal(undefined);
+    const payFee = await escrow.protocolFee(amount);
     await expect(escrow.connect(resolver).resolveDispute(paySeller.id, true)).to.changeTokenBalances(
       musd,
-      [await escrow.getAddress(), seller.address],
-      [-amount, amount],
+      [await escrow.getAddress(), seller.address, donor.address],
+      [-amount, amount - payFee, payFee],
     );
     expect((await escrow.getEscrow(paySeller.id)).state).to.equal(STATE.Released);
   });
 
   it("lets the resolver split a disputed amount and rejects a full-side split", async function () {
-    const { escrow, seller, buyer, resolver, outsider, musd, amount } = await deployFixture();
+    const { escrow, seller, buyer, resolver, outsider, donor, musd, amount } = await deployFixture();
     expect(await escrow.partialSettlementSupported()).to.equal(true);
     const created = await createAgreement(escrow, seller, resolver, buyer.address, amount);
     await fund(musd, escrow, buyer, created.id, amount);
@@ -432,13 +443,14 @@ describe("RelayEscrow", function () {
 
     const sellerAmount = ethers.parseEther("20");
     const buyerAmount = amount - sellerAmount;
+    const sellerFee = await escrow.protocolFee(sellerAmount);
     await expect(escrow.connect(outsider).resolveDisputeSplit(created.id, sellerAmount)).to.be.revertedWithCustomError(escrow, "NotResolver");
     await expect(escrow.connect(resolver).resolveDisputeSplit(created.id, 0)).to.be.revertedWithCustomError(escrow, "SplitAmount");
     await expect(escrow.connect(resolver).resolveDisputeSplit(created.id, amount)).to.be.revertedWithCustomError(escrow, "SplitAmount");
     await expect(escrow.connect(resolver).resolveDisputeSplit(created.id, sellerAmount)).to.changeTokenBalances(
       musd,
-      [await escrow.getAddress(), seller.address, buyer.address],
-      [-amount, sellerAmount, buyerAmount],
+      [await escrow.getAddress(), seller.address, buyer.address, donor.address],
+      [-amount, sellerAmount - sellerFee, buyerAmount, sellerFee],
     );
     expect((await escrow.getEscrow(created.id)).state).to.equal(STATE.Split);
     await expect(escrow.connect(resolver).resolveDisputeSplit(created.id, sellerAmount)).to.be.revertedWithCustomError(escrow, "InvalidState");
@@ -471,6 +483,7 @@ describe("RelayEscrow", function () {
     const second = await createAgreement(escrow, seller, resolver, outsider.address, amount * 2n);
     await fund(musd, escrow, buyer, first.id, amount);
     await musd.connect(outsider).approve(await escrow.getAddress(), amount * 2n);
+    await escrow.connect(outsider).acceptResolver(second.id);
     await escrow.connect(outsider).fundEscrow(second.id);
     await musd.mint(donor.address, 7n);
     await musd.connect(donor).transfer(await escrow.getAddress(), 7n);
@@ -497,6 +510,7 @@ describe("RelayEscrow", function () {
       deliveryAfterFunding: MIN_GAP,
     });
     await musd.connect(buyer).approve(await escrow.getAddress(), amount);
+    await escrow.connect(buyer).acceptResolver(created.id);
     await time.setNextBlockTimestamp(Number(created.fundingDeadline));
     await expect(escrow.connect(buyer).fundEscrow(created.id)).to.emit(escrow, "EscrowFunded");
 
@@ -516,12 +530,13 @@ describe("RelayEscrow", function () {
     const { seller, buyer, resolver, amount } = await deployFixture();
     const token = await ethers.deployContract("ReenteringToken");
     await token.waitForDeployment();
-    const escrow = await ethers.deployContract("RelayEscrow", [await token.getAddress()]);
+    const escrow = await ethers.deployContract("RelayEscrow", [await token.getAddress(), seller.address]);
     await escrow.waitForDeployment();
     await token.setEscrow(await escrow.getAddress());
     await token.mint(buyer.address, amount);
     const created = await createAgreement(escrow, seller, resolver, buyer.address, amount);
     await token.connect(buyer).approve(await escrow.getAddress(), amount);
+    await escrow.connect(buyer).acceptResolver(created.id);
     await token.setAttack(created.id, true, false);
     await expect(escrow.connect(buyer).fundEscrow(created.id)).to.be.revertedWithCustomError(escrow, "ReentrancyGuardReentrantCall");
     expect((await escrow.getEscrow(created.id)).state).to.equal(STATE.Created);
@@ -580,7 +595,7 @@ describe("RelayEscrow", function () {
       const sellerBalance = await musd.balanceOf(seller.address);
       const contractBalance = await musd.balanceOf(await escrow.getAddress());
       if (state === STATE.Released) {
-        expect(sellerBalance).to.equal(ethers.parseEther("1000") + amount);
+        expect(sellerBalance).to.equal(ethers.parseEther("1000") + amount - (amount * 50n) / 10_000n);
         expect(contractBalance).to.equal(amount);
       } else {
         expect(contractBalance).to.equal(amount * 2n);
@@ -608,6 +623,7 @@ describe("RelayEscrow", function () {
     await expect(escrow.connect(seller).fundEscrowAsAgent(created.id)).to.be.revertedWithCustomError(escrow, "AgentNotAllowed");
     await expect(escrow.connect(resolver).fundEscrowAsAgent(created.id)).to.be.revertedWithCustomError(escrow, "AgentNotAllowed");
     await expect(escrow.connect(buyer).fundEscrowAsAgent(created.id)).to.be.revertedWithCustomError(escrow, "AgentNotAllowed");
+    await escrow.connect(buyer).acceptResolver(created.id);
 
     await expect(escrow.connect(agent).fundEscrowAsAgent(created.id)).to.changeTokenBalances(
       musd,
@@ -645,7 +661,7 @@ describe("RelayEscrow", function () {
     const settled = await escrow.getEscrow(created.id);
     expect(settled.state).to.equal(STATE.Released);
     expect(settled.evidenceHash).to.equal(evidence.evidenceHash);
-    expect(await musd.balanceOf(seller.address)).to.equal(ethers.parseEther("1000") + amount);
+    expect(await musd.balanceOf(seller.address)).to.equal(ethers.parseEther("1000") + amount - (await escrow.protocolFee(amount)));
 
     const refundable = await createAgreement(escrow, seller, resolver, buyer.address, ethers.parseEther("20"), {
       fundingIn: 2 * HOUR,
@@ -656,5 +672,142 @@ describe("RelayEscrow", function () {
     await escrow.connect(buyer).refundAfterMissedDeadline(refundable.id);
     expect((await escrow.getEscrow(refundable.id)).state).to.equal(STATE.Refunded);
     expect((await escrow.getEscrow(created.id)).state).to.equal(STATE.Released);
+  });
+
+  it("refunds the full amount when both parties cancel, and lets a delivery agent submit only", async function () {
+    const { escrow, seller, buyer, resolver, outsider, donor, musd, amount } = await deployFixture();
+    expect(await escrow.mutualCancelSupported()).to.equal(true);
+    expect(await escrow.deliveryAgentSupported()).to.equal(true);
+
+    const created = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    await expect(escrow.connect(buyer).proposeMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
+    await fund(musd, escrow, buyer, created.id, amount);
+    const buyerBefore = await musd.balanceOf(buyer.address);
+    const donorBefore = await musd.balanceOf(donor.address);
+
+    await expect(escrow.connect(resolver).proposeMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await expect(escrow.connect(outsider).proposeMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await expect(escrow.connect(buyer).acceptMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+
+    await escrow.connect(buyer).proposeMutualCancel(created.id);
+    expect(await escrow.mutualCancelProposer(created.id)).to.equal(buyer.address);
+    await expect(escrow.connect(buyer).acceptMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await escrow.connect(buyer).revokeMutualCancel(created.id);
+    expect(await escrow.mutualCancelProposer(created.id)).to.equal(ethers.ZeroAddress);
+    await expect(escrow.connect(seller).revokeMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+
+    await escrow.connect(seller).proposeMutualCancel(created.id);
+    await expect(escrow.connect(seller).acceptMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await expect(escrow.connect(buyer).acceptMutualCancel(created.id))
+      .to.emit(escrow, "EscrowRefunded")
+      .withArgs(created.id, buyer.address, amount, 3);
+    expect((await escrow.getEscrow(created.id)).state).to.equal(STATE.Refunded);
+    expect(await musd.balanceOf(buyer.address)).to.equal(buyerBefore + amount);
+    expect(await musd.balanceOf(donor.address)).to.equal(donorBefore);
+    expect(await escrow.mutualCancelProposer(created.id)).to.equal(ethers.ZeroAddress);
+    await expect(escrow.connect(seller).acceptMutualCancel(created.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
+
+    const delivered = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    await fund(musd, escrow, buyer, delivered.id, amount);
+    await escrow.connect(buyer).proposeMutualCancel(delivered.id);
+    const evidence = buildEvidence();
+    await escrow.connect(seller).submitDelivery(delivered.id, evidence.evidenceHash, evidence.evidence);
+    expect(await escrow.mutualCancelProposer(delivered.id)).to.equal(ethers.ZeroAddress);
+    await expect(escrow.connect(seller).acceptMutualCancel(delivered.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
+
+    const agent = outsider;
+    await expect(escrow.connect(seller).setDeliveryAgent(ethers.ZeroAddress, true)).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    await expect(escrow.connect(seller).setDeliveryAgent(seller.address, true)).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    const agentJob = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    await fund(musd, escrow, buyer, agentJob.id, amount);
+    await expect(escrow.connect(agent).submitDeliveryAsAgent(agentJob.id, evidence.evidenceHash, evidence.evidence)).to.be.revertedWithCustomError(escrow, "AgentNotAllowed");
+    await escrow.connect(seller).setDeliveryAgent(agent.address, true);
+    await escrow.connect(seller).setDeliveryAgent(buyer.address, true);
+    await expect(escrow.connect(buyer).submitDeliveryAsAgent(agentJob.id, evidence.evidenceHash, evidence.evidence)).to.be.revertedWithCustomError(escrow, "AgentNotAllowed");
+    await expect(escrow.connect(agent).submitDeliveryAsAgent(agentJob.id, evidence.evidenceHash, evidence.evidence)).to.emit(escrow, "AgentDelivered");
+    const submitted = await escrow.getEscrow(agentJob.id);
+    expect(submitted.state).to.equal(STATE.Delivered);
+    expect(submitted.seller).to.equal(seller.address);
+    expect(submitted.evidenceHash).to.equal(evidence.evidenceHash);
+    await expect(escrow.connect(agent).releaseToSeller(agentJob.id)).to.be.revertedWithCustomError(escrow, "NotBuyer");
+    await expect(escrow.connect(agent).refundAfterMissedDeadline(agentJob.id)).to.be.revertedWithCustomError(escrow, "NotBuyer");
+    const reason = "Agent cannot freeze this.";
+    await expect(escrow.connect(agent).raiseDispute(agentJob.id, hashText(reason), reason)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await expect(escrow.connect(agent).cancelUnfunded(agentJob.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
+    const unfunded = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    await expect(escrow.connect(agent).cancelUnfunded(unfunded.id)).to.be.revertedWithCustomError(escrow, "InvalidState");
+
+    await escrow.connect(seller).setDeliveryAgent(agent.address, false);
+    const revoked = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    await fund(musd, escrow, buyer, revoked.id, amount);
+    await expect(escrow.connect(agent).submitDeliveryAsAgent(revoked.id, evidence.evidenceHash, evidence.evidence)).to.be.revertedWithCustomError(escrow, "AgentNotAllowed");
+    await escrow.connect(seller).submitDelivery(revoked.id, evidence.evidenceHash, evidence.evidence);
+    expect((await escrow.getEscrow(revoked.id)).state).to.equal(STATE.Delivered);
+  });
+
+  it("gates funding, accepts the resolver, extends review, and pays the resolver only on a dispute", async function () {
+    const { escrow, seller, buyer, resolver, outsider, musd, amount } = await deployFixture();
+    expect(await escrow.milestoneGateSupported()).to.equal(true);
+    expect(await escrow.resolverAcceptanceSupported()).to.equal(true);
+    expect(await escrow.reviewExtensionSupported()).to.equal(true);
+    expect(await escrow.resolverFeeSupported()).to.equal(true);
+
+    const first = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    const latest = BigInt(await time.latest());
+    const meta = buildMeta("Second stage");
+    await expect(escrow.connect(seller).createEscrow(
+      buyer.address, resolver.address, amount, latest + BigInt(2 * DAY), latest + BigInt(4 * DAY), HOUR,
+      meta.termsHash, meta.metadataHash, meta.metadata, 99, 0,
+    )).to.be.revertedWithCustomError(escrow, "EscrowNotFound");
+    await expect(escrow.connect(outsider).createEscrow(
+      buyer.address, resolver.address, amount, latest + BigInt(2 * DAY), latest + BigInt(4 * DAY), HOUR,
+      meta.termsHash, meta.metadataHash, meta.metadata, first.id, 0,
+    )).to.be.revertedWithCustomError(escrow, "NotSeller");
+    const secondTx = await escrow.connect(seller).createEscrow(
+      buyer.address, resolver.address, amount, latest + BigInt(2 * DAY), latest + BigInt(4 * DAY), HOUR,
+      meta.termsHash, meta.metadataHash, meta.metadata, first.id, ethers.parseEther("1"),
+    );
+    const secondReceipt = await secondTx.wait();
+    const secondId = secondReceipt?.logs.map((log) => {
+      try { return escrow.interface.parseLog(log); } catch { return null; }
+    }).find((event) => event?.name === "EscrowCreated")?.args.escrowId as bigint;
+    expect(await escrow.predecessorOf(secondId)).to.equal(first.id);
+    expect(await escrow.resolverFeeOf(secondId)).to.equal(ethers.parseEther("1"));
+
+    await musd.connect(buyer).approve(await escrow.getAddress(), amount * 2n);
+    await expect(escrow.connect(buyer).fundEscrow(first.id)).to.be.revertedWithCustomError(escrow, "ResolverNotAccepted");
+    await expect(escrow.connect(seller).acceptResolver(first.id)).to.be.revertedWithCustomError(escrow, "NotBuyer");
+    await escrow.connect(buyer).acceptResolver(first.id);
+    await escrow.connect(buyer).fundEscrow(first.id);
+    await escrow.connect(buyer).acceptResolver(secondId);
+    await expect(escrow.connect(buyer).fundEscrow(secondId)).to.be.revertedWithCustomError(escrow, "PredecessorNotReleased");
+
+    const evidence = buildEvidence();
+    await escrow.connect(seller).submitDelivery(first.id, evidence.evidenceHash, evidence.evidence);
+    const delivered = await escrow.getEscrow(first.id);
+    const tooFar = delivered.reviewDeadline - BigInt(delivered.reviewPeriod) + BigInt(MAX_REVIEW) + 1n;
+    await expect(escrow.connect(outsider).proposeReviewExtension(first.id, delivered.reviewDeadline + 60n)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await expect(escrow.connect(buyer).proposeReviewExtension(first.id, tooFar)).to.be.revertedWithCustomError(escrow, "InvalidReviewPeriod");
+    const extended = delivered.reviewDeadline + 3600n;
+    await escrow.connect(buyer).proposeReviewExtension(first.id, extended);
+    await expect(escrow.connect(buyer).acceptReviewExtension(first.id)).to.be.revertedWithCustomError(escrow, "NotParty");
+    await escrow.connect(seller).acceptReviewExtension(first.id);
+    expect((await escrow.getEscrow(first.id)).reviewDeadline).to.equal(extended);
+
+    const resolverBefore = await musd.balanceOf(resolver.address);
+    await escrow.connect(buyer).releaseToSeller(first.id);
+    expect(await musd.balanceOf(resolver.address)).to.equal(resolverBefore);
+    await escrow.connect(buyer).fundEscrow(secondId);
+    expect((await escrow.getEscrow(secondId)).state).to.equal(STATE.Funded);
+
+    await escrow.connect(seller).submitDelivery(secondId, evidence.evidenceHash, evidence.evidence);
+    const reason = "Need the resolver.";
+    await escrow.connect(buyer).raiseDispute(secondId, hashText(reason), reason);
+    await expect(escrow.connect(resolver).resolveDispute(secondId, false)).to.changeTokenBalances(
+      musd,
+      [resolver.address, buyer.address],
+      [ethers.parseEther("1"), amount - ethers.parseEther("1")],
+    );
+    expect((await escrow.getEscrow(secondId)).state).to.equal(STATE.Refunded);
   });
 });

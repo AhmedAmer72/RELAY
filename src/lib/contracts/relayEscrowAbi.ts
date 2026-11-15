@@ -6,6 +6,11 @@ export const relayEscrowAbi = [
         "internalType": "address",
         "name": "musd",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -98,6 +103,11 @@ export const relayEscrowAbi = [
   },
   {
     "inputs": [],
+    "name": "PredecessorNotReleased",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "ReasonInvalid",
     "type": "error"
   },
@@ -108,7 +118,17 @@ export const relayEscrowAbi = [
   },
   {
     "inputs": [],
+    "name": "ResolverFee",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "ResolverIsParty",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ResolverNotAccepted",
     "type": "error"
   },
   {
@@ -195,6 +215,31 @@ export const relayEscrowAbi = [
       {
         "indexed": true,
         "internalType": "address",
+        "name": "seller",
+        "type": "address"
+      }
+    ],
+    "name": "AgentDelivered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "agent",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "buyer",
         "type": "address"
       },
@@ -206,6 +251,31 @@ export const relayEscrowAbi = [
       }
     ],
     "name": "AgentFunded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "seller",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "agent",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "allowed",
+        "type": "bool"
+      }
+    ],
+    "name": "DeliveryAgentSet",
     "type": "event"
   },
   {
@@ -494,6 +564,176 @@ export const relayEscrowAbi = [
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      }
+    ],
+    "name": "MutualCancelProposed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      }
+    ],
+    "name": "MutualCancelRevoked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProtocolFeePaid",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
+      }
+    ],
+    "name": "ResolverAccepted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "resolver",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ResolverFeePaid",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "acceptor",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "newDeadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "ReviewExtensionAccepted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "newDeadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "ReviewExtensionProposed",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "FEE_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "MAX_EVIDENCE_BYTES",
     "outputs": [
@@ -612,6 +852,19 @@ export const relayEscrowAbi = [
   },
   {
     "inputs": [],
+    "name": "REFUND_MUTUAL",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "RELEASE_BUYER_ACCEPTED",
     "outputs": [
       {
@@ -647,6 +900,45 @@ export const relayEscrowAbi = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "acceptMutualCancel",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "acceptResolver",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "acceptReviewExtension",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -732,6 +1024,16 @@ export const relayEscrowAbi = [
         "internalType": "string",
         "name": "metadata",
         "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "predecessorId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "resolverFee",
+        "type": "uint256"
       }
     ],
     "name": "createEscrow",
@@ -746,6 +1048,43 @@ export const relayEscrowAbi = [
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "seller",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "agent",
+        "type": "address"
+      }
+    ],
+    "name": "deliveryAgent",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "deliveryAgentSupported",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "escrowCount",
     "outputs": [
@@ -753,6 +1092,32 @@ export const relayEscrowAbi = [
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -882,6 +1247,19 @@ export const relayEscrowAbi = [
   },
   {
     "inputs": [],
+    "name": "milestoneGateSupported",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "musdToken",
     "outputs": [
       {
@@ -891,6 +1269,38 @@ export const relayEscrowAbi = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "mutualCancelProposer",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "mutualCancelSupported",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -914,6 +1324,75 @@ export const relayEscrowAbi = [
         "internalType": "bool",
         "name": "",
         "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "predecessorOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "predecessorId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "proposeMutualCancel",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint64",
+        "name": "newDeadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "proposeReviewExtension",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "sellerAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "protocolFee",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "pure",
@@ -1018,6 +1497,134 @@ export const relayEscrowAbi = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "resolverAcceptanceSupported",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "resolverAccepted",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "accepted",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "resolverFeeOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "fee",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "resolverFeeSupported",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "reviewExtensionDeadline",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "proposedDeadline",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "reviewExtensionProposer",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "reviewExtensionSupported",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      }
+    ],
+    "name": "revokeMutualCancel",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -1031,6 +1638,24 @@ export const relayEscrowAbi = [
       }
     ],
     "name": "setAgentAllowance",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "agent",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "allowed",
+        "type": "bool"
+      }
+    ],
+    "name": "setDeliveryAgent",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1054,6 +1679,29 @@ export const relayEscrowAbi = [
       }
     ],
     "name": "submitDelivery",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "evidence",
+        "type": "string"
+      }
+    ],
+    "name": "submitDeliveryAsAgent",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

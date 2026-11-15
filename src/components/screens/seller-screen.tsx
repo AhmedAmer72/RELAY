@@ -28,11 +28,15 @@ export function SellerScreen({ address }: { address: string }) {
       {list.isError ? <ErrorPanel title="Seller history could not be read from the contract." onRetry={() => void list.refetch()} /> : null}
       {!list.isLoading && !list.isError ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Card><p className="text-xs text-faint">Agreements found</p><p className="num display mt-2 text-3xl">{agreements.length}</p></Card>
+            <Card><p className="text-xs text-faint">Released</p><p className="num display mt-2 text-3xl">{agreements.filter((escrow) => escrow.state === "Released").length}</p></Card>
+            <Card><p className="text-xs text-faint">Refunded</p><p className="num display mt-2 text-3xl">{agreements.filter((escrow) => escrow.state === "Refunded").length}</p></Card>
+            <Card><p className="text-xs text-faint">Disputed</p><p className="num display mt-2 text-3xl">{agreements.filter((escrow) => escrow.state === "Disputed").length}</p></Card>
+            <Card><p className="text-xs text-faint">Split</p><p className="num display mt-2 text-3xl">{agreements.filter((escrow) => escrow.state === "Split").length}</p></Card>
             <Card><p className="text-xs text-faint">Paid to this seller</p><p className="num display mt-2 text-3xl">{completed.length}</p></Card>
           </div>
-          {list.truncated ? <p className="text-sm text-faint">Most recent agreements only.</p> : null}
+          {list.truncated ? <p className="text-sm text-faint">These counts cover only the loaded agreements, not the full history.</p> : null}
           {agreements.length === 0 ? <EmptyState title="No agreements for this seller were found." copy="The list comes from agreements stored on the escrow contract." /> : null}
           <div className="space-y-3">
             {agreements.map((escrow) => (

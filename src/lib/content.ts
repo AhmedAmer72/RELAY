@@ -33,7 +33,7 @@ export const FAQ = [
   },
   {
     question: "What fees are there?",
-    answer: "No protocol fee. Your wallet shows the BTC network fee before you sign.",
+    answer: "The current escrow takes 0.50% when the seller is paid. Refunds are whole. Your wallet also shows the BTC network fee.",
   },
 ];
 

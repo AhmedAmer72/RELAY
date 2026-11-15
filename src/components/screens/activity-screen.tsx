@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { describeEvent } from "@/lib/chain/logs";
+import { useQuery } from "@tanstack/react-query";
+import { useSignMessage } from "wagmi";
+import type { Address, Hex } from "viem";
+import { describeEvent, type ChainEvent } from "@/lib/chain/logs";
 import { escrowPath, explorerTxUrl, getEscrowConfig } from "@/lib/chain/config";
 import { formatTimestamp } from "@/lib/escrow/time";
-import { useChainEvents } from "@/hooks/use-escrow";
-import { Button, CopyButton, EmptyState, ErrorPanel, ExternalLink, FilterChip, Skeleton } from "@/components/ui";
+import { useProtocol } from "@/hooks/use-escrow";
+import { Button, Card, CopyButton, EmptyState, ErrorPanel, ExternalLink, Field, FilterChip, Skeleton, controlClass } from "@/components/ui";
 import { cn } from "@/lib/utils/cn";
 
 const FILTERS = [
@@ -25,9 +28,46 @@ function shortHash(hash: string) {
   return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
 }
 
+type ActivityBody = {
+  items: { name: string; contractAddress: Address; escrowId?: string; blockNumber: string; transactionHash: Hex; args: Record<string, string | boolean> }[];
+  caughtUp: boolean;
+  indexing: boolean;
+  error?: string;
+  from?: string;
+  to?: string;
+  latest?: string;
+};
+
+function useActivityIndex() {
+  return useQuery({
+    queryKey: ["activity-index"],
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const response = await fetch("/api/activity");
+      if (!response.ok) throw new Error("Activity could not be loaded.");
+      const body = await response.json() as ActivityBody;
+      if (body.error) throw new Error(body.error);
+      const items: ChainEvent[] = body.items.map((event) => ({
+        name: event.name as ChainEvent["name"],
+        contractAddress: event.contractAddress,
+        escrowId: event.escrowId ? BigInt(event.escrowId) : undefined,
+        blockNumber: BigInt(event.blockNumber),
+        transactionHash: event.transactionHash,
+        args: event.args,
+      }));
+      return { ...body, items };
+    },
+  });
+}
+
 export function ActivityScreen() {
   const escrow = getEscrowConfig();
-  const events = useChainEvents();
+  const events = useActivityIndex();
+  const protocol = useProtocol();
+  const { signMessageAsync } = useSignMessage();
+  const [hookUrl, setHookUrl] = useState("");
+  const [hookSecret, setHookSecret] = useState("");
+  const [hookError, setHookError] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
   const [page, setPage] = useState(0);
   const items = (events.data?.items ?? []).filter((event) => filter === "all" || event.name === filter);
@@ -57,14 +97,16 @@ export function ActivityScreen() {
       </div>
       {!escrow.address ? <ErrorPanel title="The escrow contract address is not configured." detail="Activity is not shown until a deployed contract is set. This is not an empty scan of the chain." /> : null}
       {escrow.address && events.isLoading ? <div className="space-y-3">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-20 rounded-[28px]" />)}</div> : null}
-      {escrow.address && events.isError ? <ErrorPanel title="Activity could not be loaded from the network." onRetry={() => void events.refetch()} /> : null}
-      {escrow.address && !events.isLoading && !events.isError && items.length === 0 ? (
+      {escrow.address && events.isError ? <ErrorPanel title="Activity could not be loaded from the network." detail={events.error instanceof Error ? events.error.message : "The scan failed. This is not an empty history."} onRetry={() => void fetch("/api/activity?retry=1").then(() => events.refetch())} /> : null}
+      {escrow.address && !events.isLoading && !events.isError && events.data?.indexing ? (
+        <p className="text-sm text-muted">Reading blocks {events.data.from ?? "16358867"} through {events.data.to ?? "…"} of {events.data.latest ?? "the latest block"}. This is not an empty history.</p>
+      ) : null}
+      {escrow.address && !events.isLoading && !events.isError && events.data?.caughtUp && items.length === 0 ? (
         <EmptyState
           title={filter === "all" ? "No events in this range." : "No events match this filter."}
-          copy={filter === "all" ? "Create a checkout or widen the indexed block range with the deployment block setting." : "Try another filter. This does not mean the read failed."}
+          copy="The index has reached the latest block."
         />
       ) : null}
-      {events.data?.partial ? <p className="text-sm text-faint">Older events may be outside this block range.</p> : null}
       {escrow.address && visible.length > 0 ? (
         <ol className="tx-feed activity-feed">
           {visible.map((event, index) => {
@@ -98,6 +140,32 @@ export function ActivityScreen() {
           })}
         </ol>
       ) : null}
+      <Card className="space-y-3">
+        <h2 className="text-lg font-semibold">State webhook</h2>
+        <p className="text-sm text-muted">When a new event is indexed, RELAY posts it to an https address and signs the body with a secret. Local and private hosts are rejected.</p>
+        <Field label="https URL">
+          <input className={controlClass} value={hookUrl} onChange={(event) => setHookUrl(event.target.value)} placeholder="https://example.com/relay" />
+        </Field>
+        {hookError ? <p className="text-sm text-danger">{hookError}</p> : null}
+        {hookSecret ? <p className="break-all text-sm">Secret, shown once: <span className="num">{hookSecret}</span></p> : null}
+        <Button disabled={!protocol.account.address || !hookUrl} onClick={() => void (async () => {
+          if (!protocol.account.address) return;
+          setHookError("");
+          try {
+            const signature = await signMessageAsync({ message: `RELAY webhook\n${hookUrl.trim()}` });
+            const response = await fetch("/api/webhooks", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ url: hookUrl.trim(), owner: protocol.account.address, signature }),
+            });
+            const body = await response.json() as { secret?: string; error?: string };
+            if (!response.ok || !body.secret) throw new Error(body.error ?? "The webhook was not saved.");
+            setHookSecret(body.secret);
+          } catch (error) {
+            setHookError(error instanceof Error ? error.message : "The webhook was not saved.");
+          }
+        })()}>Sign and register</Button>
+      </Card>
       {items.length > pageSize ? (
         <div className="flex items-center justify-between">
           <Button variant="ghost" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous</Button>
