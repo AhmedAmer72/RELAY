@@ -6,6 +6,8 @@ RELAY is a non-custodial checkout for MUSD on Mezo. A seller publishes an agreem
 
 The website prepares transactions and reads the chain. It does not custody funds, and it has no key that can withdraw them.
 
+The step-by-step guide for sellers, buyers, agents, and operators is [docs/GUIDE.md](docs/GUIDE.md).
+
 This repository was specified as MEZO LOOP / LoopGuard and is shipped as RELAY. Mezo and MUSD keep their protocol names.
 
 ## Status
