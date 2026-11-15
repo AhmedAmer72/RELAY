@@ -24,7 +24,7 @@ const GUIDE_LINKS = [
   { href: "/docs", label: "Docs", icon: "doc" },
 ] as const;
 
-const PITCH_DECK_HREF = "/docs#pitch-deck";
+const PITCH_DECK_HREF = "/pitch";
 
 const MOBILE_LINKS = [
   { href: "/dashboard", label: "Home", icon: "grid" },
@@ -155,6 +155,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       window.removeEventListener("resize", apply);
     };
   }, [checkout]);
+
+  if (pathname === "/pitch") return children;
 
   return (
     <div className="min-h-screen bg-white">

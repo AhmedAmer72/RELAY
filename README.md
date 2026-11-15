@@ -374,16 +374,16 @@ On-chain receipts from 8 November 2026. Each row names the contract that actuall
 | Stability Pool deposit | Mezo Stability Pool `0x1CCA7E41…680e` | [`0xdd484c92e4b307083e1d0da2895d1db0244ca9dfd074ec79ad3124453358cdb8`](https://explorer.test.mezo.org/tx/0xdd484c92e4b307083e1d0da2895d1db0244ca9dfd074ec79ad3124453358cdb8) |
 | Stability Pool withdrawal | Mezo Stability Pool `0x1CCA7E41…680e` | [`0x3413d5a9f8af88726573888b29e8bfefd1ebb0304caa91a9cda76715c4d10443`](https://explorer.test.mezo.org/tx/0x3413d5a9f8af88726573888b29e8bfefd1ebb0304caa91a9cda76715c4d10443) |
 | Mutual cancel | Historical escrow `0x50ab19e5…b793` | [`0x79d31e9051180978de25426be472dcd652116b82da5f752c48d952afedad8a8b`](https://explorer.test.mezo.org/tx/0x79d31e9051180978de25426be472dcd652116b82da5f752c48d952afedad8a8b) |
-| Release to the seller, 0.02 MUSD fee on 4 MUSD, seller net 3.98 MUSD | Current escrow `0x7b31489D…3fD4` | [`0xffac7be42e45fa4da98d62f3b8d2a7a67ffb40caffb6d98ddad4d8c161817f73`](https://explorer.test.mezo.org/tx/0xffac7be42e45fa4da98d62f3b8d2a7a67ffb40caffb6d98ddad4d8c161817f73) |
-| Resolver split, 0.01 MUSD fee on the 2 MUSD seller leg | Current escrow `0x7b31489D…3fD4` | [`0x1b1b90b6e525e42e5c2bb02e3a3a7723db97cc80a4a9f44fb912ec6eb1db8350`](https://explorer.test.mezo.org/tx/0x1b1b90b6e525e42e5c2bb02e3a3a7723db97cc80a4a9f44fb912ec6eb1db8350) |
-| Refund of the full 4 MUSD after a missed delivery | Current escrow `0x7b31489D…3fD4` | [`0xdfe8ab2cddb16c3efcec815ea39d3730c9fd8ac212b7f655b6cf785fee365f5a`](https://explorer.test.mezo.org/tx/0xdfe8ab2cddb16c3efcec815ea39d3730c9fd8ac212b7f655b6cf785fee365f5a) |
+| Release to the seller, 0.02 MUSD fee on 4 MUSD, seller net 3.98 MUSD | Previous escrow `0x7b31489D…3fD4` | [`0xffac7be42e45fa4da98d62f3b8d2a7a67ffb40caffb6d98ddad4d8c161817f73`](https://explorer.test.mezo.org/tx/0xffac7be42e45fa4da98d62f3b8d2a7a67ffb40caffb6d98ddad4d8c161817f73) |
+| Resolver split, 0.01 MUSD fee on the 2 MUSD seller leg | Previous escrow `0x7b31489D…3fD4` | [`0x1b1b90b6e525e42e5c2bb02e3a3a7723db97cc80a4a9f44fb912ec6eb1db8350`](https://explorer.test.mezo.org/tx/0x1b1b90b6e525e42e5c2bb02e3a3a7723db97cc80a4a9f44fb912ec6eb1db8350) |
+| Refund of the full 4 MUSD after a missed delivery | Previous escrow `0x7b31489D…3fD4` | [`0xdfe8ab2cddb16c3efcec815ea39d3730c9fd8ac212b7f655b6cf785fee365f5a`](https://explorer.test.mezo.org/tx/0xdfe8ab2cddb16c3efcec815ea39d3730c9fd8ac212b7f655b6cf785fee365f5a) |
 | Stability Pool withdrawal | Mezo Stability Pool `0x1CCA7E41…680e` | [`0x640c48adf92b94bb718eb6331e406283c67997ce8b4f8cffd0f30bb306ebab75`](https://explorer.test.mezo.org/tx/0x640c48adf92b94bb718eb6331e406283c67997ce8b4f8cffd0f30bb306ebab75) |
-| Second milestone funded after release | Current escrow `0x7b31489D…3fD4` | [`0x90ef98a3b49a4a1d56892692af21a5d38542f8b0deb0e42ade6485186a0dc6ba`](https://explorer.test.mezo.org/tx/0x90ef98a3b49a4a1d56892692af21a5d38542f8b0deb0e42ade6485186a0dc6ba) |
-| Resolver fee paid from a dispute | Current escrow `0x7b31489D…3fD4` | [`0x998c48d1c916b9eed979a6c4d10848d67427c4a5a50c058124c5709fffd6c31d`](https://explorer.test.mezo.org/tx/0x998c48d1c916b9eed979a6c4d10848d67427c4a5a50c058124c5709fffd6c31d) |
+| Second milestone funded after release | Previous escrow `0x7b31489D…3fD4` | [`0x90ef98a3b49a4a1d56892692af21a5d38542f8b0deb0e42ade6485186a0dc6ba`](https://explorer.test.mezo.org/tx/0x90ef98a3b49a4a1d56892692af21a5d38542f8b0deb0e42ade6485186a0dc6ba) |
+| Resolver fee paid from a dispute | Previous escrow `0x7b31489D…3fD4` | [`0x998c48d1c916b9eed979a6c4d10848d67427c4a5a50c058124c5709fffd6c31d`](https://explorer.test.mezo.org/tx/0x998c48d1c916b9eed979a6c4d10848d67427c4a5a50c058124c5709fffd6c31d) |
 
 ## Pitch deck
 
-The Mezo Buildathon deck is `RELAY_Mezo_Buildathon_Pitch_Deck.pptx` at the repository root, and it is served at `/pitch/RELAY_Mezo_Buildathon_Pitch_Deck.pptx`. The landing page and `/docs#pitch-deck` link to it.
+The pitch deck is the full-screen page at `/pitch`. Arrow keys, the on-screen buttons, or a click on either side of a slide move through it. The earlier PowerPoint remains at `/pitch/RELAY_Mezo_Buildathon_Pitch_Deck.pptx`. `/docs#pitch-deck` links to both.
 
 ## License
 

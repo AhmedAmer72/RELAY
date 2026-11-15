@@ -68,10 +68,10 @@ export function DocsScreen() {
         <section id="pitch-deck" className="scroll-mt-28 rounded-[28px] border-2 border-[#163300] bg-[#f3f8ea] p-5 target:ring-4 target:ring-meadow sm:p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">Mezo Buildathon</p>
           <h2 className="mt-1 text-xl font-semibold">Pitch deck</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">Ten slides for the testnet checkout: the problem, the escrow rules, what is live, and the next wave. The file is the PowerPoint deck in this project.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">The live deck walks the testnet checkout: the problem, the escrow rules, the Mezo actions around it, and the transactions that already settled. Arrow keys move between slides.</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <a href={PITCH_DECK_FILE} className="inline-flex min-h-11 items-center justify-center rounded-full bg-brand px-5 text-sm font-semibold text-white">Open pitch deck</a>
-            <a href={PITCH_DECK_FILE} download className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[#163300] bg-white px-5 text-sm font-semibold text-[#163300]">Download .pptx</a>
+            <Link href="/pitch" className="inline-flex min-h-11 items-center justify-center rounded-full bg-brand px-5 text-sm font-semibold text-white">Open pitch deck</Link>
+            <a href={PITCH_DECK_FILE} download className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[#163300] bg-white px-5 text-sm font-semibold text-[#163300]">Earlier PowerPoint</a>
           </div>
         </section>
 
