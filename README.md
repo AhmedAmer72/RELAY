@@ -304,7 +304,7 @@ The script checks chain ID 31611, refuses chain ID 31612, and checks that the to
 
 ### Vercel
 
-Import this repository. `vercel.json` sets the install command to `npm ci` and the build command to `npm run build`. Use Node 20. Vercel serves the app, so no start command is required.
+Import this repository. `vercel.json` sets the install command to `npm ci` and the build command to `npm run build`. Use Node 20. Vercel serves the app, so no start command is required. The activity index is scheduled once a day at 04:00 UTC, which is 06:00 in Africa/Cairo. A Hobby account rejects a schedule that runs more often than that. Set `CRON_SECRET` if you want Vercel to authorize that call.
 
 Add the `NEXT_PUBLIC_` variables from `.env.example` before the first production build. Next.js inlines them at build time. Changing them requires a new deployment. Do not put `DEPLOYER_PRIVATE_KEY` on Vercel.
 
