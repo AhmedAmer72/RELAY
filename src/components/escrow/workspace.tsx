@@ -20,6 +20,7 @@ import { useTrackedTx } from "@/hooks/use-tx";
 import { ActionPanel, AgreementCard, EscrowLinks, Timeline, TxStatus } from "@/components/escrow/views";
 import { TroveRepayPanel } from "@/components/escrow/repay-panel";
 import { StabilityPanel } from "@/components/escrow/stability-panel";
+import { SwapToMusdPanel } from "@/components/escrow/swap-panel";
 import { TroveBorrowPanel } from "@/components/escrow/trove-panel";
 import { Button, Card, CopyButton, Dialog, ErrorPanel, ExternalLink, Field, Skeleton, controlClass } from "@/components/ui";
 
@@ -417,9 +418,8 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
             chainId={protocol.chain.id}
             account={wallet}
             musd={protocol.musd.address}
-            amount={protocol.balance !== undefined && protocol.balance < model.amount - (model.amount * feeBps / 10_000n)
-              ? protocol.balance
-              : model.amount - (model.amount * feeBps / 10_000n)}
+            proceeds={model.amount - (model.amount * feeBps / 10_000n)}
+            balance={protocol.balance}
           />
         ) : null}
       </div>
@@ -447,6 +447,17 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
             ) : null}
             {tx.phase.phase === "confirmed" && verified ? <p className="text-sm text-brand">The contract state matches this action.</p> : null}
             {panel ? <ActionPanel panel={panel} busy={isActive(tx.phase.phase)} onAction={(action) => void onAction(action)} /> : null}
+            {model.state === "Created" && wallet && shortfall !== undefined && shortfall > 0n && (isZeroAddress(model.buyer) || sameAddress(model.buyer, wallet)) ? (
+              <SwapToMusdPanel
+                chainId={protocol.chain.id}
+                account={wallet}
+                musd={protocol.musd.address}
+                shortfall={shortfall}
+                musdBalance={protocol.balance}
+                chainMatches={protocol.chainMatches}
+                onSwapped={async () => { await protocol.refetchBalances(); }}
+              />
+            ) : null}
             {model.state === "Created" && wallet && (isZeroAddress(model.buyer) || sameAddress(model.buyer, wallet)) ? (
               <TroveBorrowPanel
                 chainId={protocol.chain.id}

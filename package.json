@@ -19,10 +19,16 @@
     "test:e2e": "node e2e/local-flow.mjs",
     "deploy:testnet": "hardhat run scripts/deploy.cjs --network mezoTestnet",
     "read:musd": "node scripts/read-musd.mjs",
+    "verify:mezo": "node scripts/verify-mezo.mjs",
     "check": "npm run compile && npm run test:contracts && npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.5",
+    "@x402/core": "^2.16.0",
+    "@x402/evm": "^2.16.0",
+    "@x402/express": "^2.16.0",
+    "@x402/paywall": "^2.16.0",
+    "@x402/svm": "^2.16.0",
     "clsx": "^2.1.1",
     "motion": "^14.6.0",
     "next": "^15.5.28",

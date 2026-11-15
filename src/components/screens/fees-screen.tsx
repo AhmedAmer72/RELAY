@@ -54,7 +54,7 @@ export function FeesScreen() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">Protocol</p>
         <h1 className="display-title mt-1">Seller fees</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted">The current escrow charges {typeof fee.data === "bigint" ? `${(Number(fee.data) / 100).toFixed(2)}%` : "0.50%"} when the seller is paid. Refunds are whole. Older escrows charge nothing.</p>
+        <p className="mt-2 max-w-2xl text-sm text-muted">The current escrow charges {typeof fee.data === "bigint" ? `${(Number(fee.data) / 100).toFixed(2)}%` : "0.50%"} when the seller is paid. The same rate is on 0x50ab…cB793 and 0xE881…753F. The three oldest escrows have no protocol fee. Refunds are whole.</p>
       </div>
       <Card className="space-y-2">
         <p className="text-sm">Fee recipient: <span className="num">{typeof recipient.data === "string" ? recipient.data : "—"}</span></p>

@@ -8,6 +8,12 @@ export const MEZO_TESTNET_SYSTEM = {
   sortedTroves: getAddress("0x722E4D24FD6Ff8b0AC679450F3D91294607268fA"),
   priceFeed: getAddress("0x86bCF0841622a5dAC14A313a15f96A95421b9366"),
   stabilityPool: getAddress("0x1CCA7E410eE41739792eA0A24e00349Dd247680e"),
+  skipBtcUsd: getAddress("0x7b7c000000000000000000000000000000000015"),
+  interestRateManager: getAddress("0xD4D6c36A592A2c5e86035A6bca1d57747a567f37"),
+  basicRouter: getAddress("0x9a1ff7FE3a0F69959A3fBa1F1e5ee18e1A9CD7E9"),
+  basicFactory: getAddress("0x4947243CC818b627A5D06d14C4eCe7398A23Ce1A"),
+  musdBtcPool: getAddress("0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9"),
+  btcToken: getAddress("0x7b7C000000000000000000000000000000000000"),
 } as const;
 
 export const borrowerOperationsAbi = [
@@ -71,6 +77,61 @@ export const sortedTrovesAbi = [
 
 export const priceFeedAbi = [
   { type: "function", name: "fetchPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const;
+
+export const troveRiskAbi = [
+  { type: "function", name: "MCR", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "CCR", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "getTCR", stateMutability: "view", inputs: [{ name: "_price", type: "uint256" }], outputs: [{ type: "uint256" }] },
+] as const;
+
+export const skipOracleAbi = [
+  { type: "function", name: "latestRoundData", stateMutability: "view", inputs: [], outputs: [
+    { name: "roundId", type: "uint80" },
+    { name: "answer", type: "int256" },
+    { name: "startedAt", type: "uint256" },
+    { name: "updatedAt", type: "uint256" },
+    { name: "answeredInRound", type: "uint80" },
+  ] },
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+] as const;
+
+export const interestRateAbi = [
+  { type: "function", name: "interestRate", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+] as const;
+
+export const poolPairAbi = [
+  { type: "function", name: "token0", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "token1", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "getReserves", stateMutability: "view", inputs: [], outputs: [
+    { name: "reserve0", type: "uint112" },
+    { name: "reserve1", type: "uint112" },
+    { name: "blockTimestampLast", type: "uint32" },
+  ] },
+] as const;
+
+export const poolRouterAbi = [
+  { type: "function", name: "getAmountsOut", stateMutability: "view", inputs: [
+    { name: "amountIn", type: "uint256" },
+    { name: "routes", type: "tuple[]", components: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "stable", type: "bool" },
+      { name: "factory", type: "address" },
+    ] },
+  ], outputs: [{ name: "amounts", type: "uint256[]" }] },
+  { type: "function", name: "swapExactTokensForTokens", stateMutability: "nonpayable", inputs: [
+    { name: "amountIn", type: "uint256" },
+    { name: "amountOutMin", type: "uint256" },
+    { name: "routes", type: "tuple[]", components: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "stable", type: "bool" },
+      { name: "factory", type: "address" },
+    ] },
+    { name: "to", type: "address" },
+    { name: "deadline", type: "uint256" },
+  ], outputs: [{ name: "amounts", type: "uint256[]" }] },
 ] as const;
 
 export const stabilityPoolAbi = [

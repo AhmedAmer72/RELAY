@@ -14,12 +14,14 @@ export function StabilityPanel({
   chainId,
   account,
   musd,
-  amount,
+  proceeds,
+  balance,
 }: {
   chainId: number;
   account?: Address;
   musd?: Address;
-  amount: bigint;
+  proceeds: bigint;
+  balance?: bigint;
 }) {
   const tx = useTrackedTx();
   const client = usePublicClient({ chainId });
@@ -78,16 +80,18 @@ export function StabilityPanel({
   });
   const gain = typeof gainRead.data === "bigint" ? gainRead.data : undefined;
 
+  const covered = balance !== undefined && balance >= proceeds && proceeds > 0n;
+
   async function park() {
-    if (!account || !musd || amount <= 0n) return;
+    if (!account || !musd || !covered) return;
     setError(undefined);
-    if (approved < amount) {
+    if (approved < proceeds) {
       await tx.run("Approve Stability Pool", () => writeContractAsync({
         chainId,
         address: musd,
         abi: erc20Abi,
         functionName: "approve",
-        args: [pool, amount],
+        args: [pool, proceeds],
       }), async () => {
         await allowance.refetch();
       });
@@ -98,7 +102,7 @@ export function StabilityPanel({
       address: pool,
       abi: stabilityPoolAbi,
       functionName: "provideToSP",
-      args: [amount],
+      args: [proceeds],
     }), async () => {
       await deposit.refetch();
     });
@@ -110,16 +114,18 @@ export function StabilityPanel({
     <Card className="space-y-3">
       <div>
         <h2 className="text-lg font-semibold">Merchant reserve</h2>
-        <p className="mt-1 text-sm text-muted">Park the seller payout in Mezo’s Stability Pool. This does not move the escrow balance.</p>
+        <p className="mt-1 text-sm text-muted">Deposit this receipt’s seller proceeds from the wallet. The escrow balance is not deposited. A liquidation can reduce the MUSD principal. BTC gained from liquidations is not a yield.</p>
       </div>
-      <p className="text-sm">Deposit: <span className="num font-semibold">{formatMusd(amount)} MUSD</span></p>
-      <p className="text-sm text-muted">Already in the pool: <span className="num">{parked === undefined ? "—" : `${formatMusd(parked)} MUSD`}</span></p>
+      <p className="text-sm">This receipt’s proceeds: <span className="num font-semibold">{formatMusd(proceeds)} MUSD</span></p>
+      <p className="text-sm text-muted">Wallet MUSD: <span className="num">{balance === undefined ? "—" : `${formatMusd(balance)} MUSD`}</span></p>
+      {!covered ? <p className="text-sm text-warning">The wallet does not hold this receipt’s full proceeds, so the deposit stays off. The whole balance is not substituted.</p> : null}
+      <p className="text-sm text-muted">Compounded deposit: <span className="num">{parked === undefined ? "—" : `${formatMusd(parked)} MUSD`}</span></p>
       <p className="text-sm text-muted">BTC gained from liquidations: <span className="num">{gain === undefined ? "—" : `${formatUnits(gain, 18)} BTC`}</span></p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <TxStatus phase={tx.phase} />
       <div className="flex flex-wrap gap-2">
-        <Button disabled={!account || !musd || amount <= 0n || pending} onClick={() => void park().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "The deposit failed."))}>
-          {approved < amount ? "Approve Stability Pool" : "Deposit in Stability Pool"}
+        <Button disabled={!account || !musd || !covered || pending} onClick={() => void park().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "The deposit failed."))}>
+          {approved < proceeds ? "Approve Stability Pool" : "Deposit in Stability Pool"}
         </Button>
         <Button
           variant="secondary"

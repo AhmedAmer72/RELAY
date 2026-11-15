@@ -1,5 +1,9 @@
 import { GAS_RESERVE, LIQUIDATION_ICR, MIN_ICR } from "@/lib/mezo/system";
 
+export const ORACLE_MAX_AGE_SECONDS = 60n * 60n;
+export const ORACLE_MAX_GAP_BPS = 200n;
+export const RELAY_BORROW_FLOOR = MIN_ICR;
+
 export function collateralForIcr(totalDebt: bigint, price: bigint, icr = MIN_ICR) {
   if (price === 0n || totalDebt === 0n) return 0n;
   const numerator = totalDebt * icr;
@@ -11,9 +15,34 @@ export function collateralRatio(coll: bigint, debt: bigint, price: bigint) {
   return (coll * price) / debt;
 }
 
-export function liquidationPrice(coll: bigint, debt: bigint) {
-  if (coll === 0n) return undefined;
-  return (debt * LIQUIDATION_ICR) / coll;
+export function liquidationPrice(coll: bigint, debt: bigint, mcr = LIQUIDATION_ICR) {
+  if (coll === 0n || debt === 0n || mcr === 0n) return undefined;
+  return (debt * mcr) / coll;
+}
+
+export function inRecoveryMode(tcr?: bigint, ccr?: bigint) {
+  if (tcr === undefined || ccr === undefined) return undefined;
+  return tcr < ccr;
+}
+
+export function priceGapBps(feed: bigint, skip: bigint) {
+  if (feed <= 0n || skip <= 0n) return undefined;
+  const diff = feed > skip ? feed - skip : skip - feed;
+  return (diff * 10_000n) / feed;
+}
+
+export function oracleAllowsBorrow(input: { feed: bigint; skip: bigint; updatedAt: bigint; now: bigint }) {
+  if (input.feed <= 0n || input.skip <= 0n) {
+    return { ok: false as const, reason: "The BTC price is not available." };
+  }
+  if (input.updatedAt <= 0n || input.now > input.updatedAt + ORACLE_MAX_AGE_SECONDS) {
+    return { ok: false as const, reason: "The BTC/USD oracle is more than an hour old." };
+  }
+  const gap = priceGapBps(input.feed, input.skip);
+  if (gap === undefined || gap > ORACLE_MAX_GAP_BPS) {
+    return { ok: false as const, reason: "The Mezo price and the Skip oracle differ by more than 2%." };
+  }
+  return { ok: true as const, gap };
 }
 
 export type BorrowPlan = {
