@@ -5,16 +5,19 @@ import { type Address, formatUnits, getAddress } from "viem";
 import { usePublicClient, useReadContract, useReadContracts, useWriteContract } from "wagmi";
 import { useTrackedTx } from "@/hooks/use-tx";
 import { formatMusd } from "@/lib/escrow/format";
-import { planBorrow } from "@/lib/mezo/quote";
+import { inRecoveryMode, liquidationPrice, oracleAllowsBorrow, planBorrow, RELAY_BORROW_FLOOR } from "@/lib/mezo/quote";
 import {
   GAS_RESERVE,
   MEZO_TESTNET_SYSTEM,
   TROVE_ACTIVE,
   borrowerOperationsAbi,
   hintHelpersAbi,
+  interestRateAbi,
   priceFeedAbi,
+  skipOracleAbi,
   sortedTrovesAbi,
   troveManagerAbi,
+  troveRiskAbi,
 } from "@/lib/mezo/system";
 import { Button, Card } from "@/components/ui";
 import { TxStatus } from "@/components/escrow/views";
@@ -165,23 +168,67 @@ export function TroveBorrowPanel({
     });
   }
 
+  const risk = useReadContracts({
+    allowFailure: true,
+    contracts: [
+      { address: MEZO_TESTNET_SYSTEM.troveManager, abi: troveRiskAbi, functionName: "MCR", chainId },
+      { address: MEZO_TESTNET_SYSTEM.troveManager, abi: troveRiskAbi, functionName: "CCR", chainId },
+      { address: MEZO_TESTNET_SYSTEM.troveManager, abi: troveRiskAbi, functionName: "getTCR", args: price ? [price] : undefined, chainId },
+      { address: MEZO_TESTNET_SYSTEM.skipBtcUsd, abi: skipOracleAbi, functionName: "latestRoundData", chainId },
+      { address: MEZO_TESTNET_SYSTEM.interestRateManager, abi: interestRateAbi, functionName: "interestRate", chainId },
+    ],
+    query: { enabled, refetchInterval: 20_000 },
+  });
+  const riskRow = (index: number) => {
+    const item = risk.data?.[index];
+    return item?.status === "success" ? item.result : undefined;
+  };
+  const mcr = asBigint(riskRow(0));
+  const ccr = asBigint(riskRow(1));
+  const tcr = asBigint(riskRow(2));
+  const skipRound = Array.isArray(riskRow(3)) ? riskRow(3) as readonly bigint[] : undefined;
+  const skipPrice = skipRound && skipRound[1] > 0n ? skipRound[1] : 0n;
+  const skipUpdatedAt = skipRound?.[3] ?? 0n;
+  const oracle = price !== undefined
+    ? oracleAllowsBorrow({ feed: price, skip: skipPrice, updatedAt: skipUpdatedAt, now: BigInt(Math.floor(Date.now() / 1000)) })
+    : undefined;
+  const interest = typeof riskRow(4) === "number" || typeof riskRow(4) === "bigint" ? Number(riskRow(4)) : undefined;
+  const recovery = inRecoveryMode(tcr, ccr);
   const currentRatio = typeof icrRead.data === "bigint" ? icrRead.data : undefined;
-  const liquidation = active ? undefined : plan ? (plan.collateral === 0n ? undefined : (plan.totalDebt * 110n * 10n ** 16n) / plan.collateral) : undefined;
+  const shownColl = active ? coll : plan?.collateral;
+  const shownDebt = active ? debt : plan?.totalDebt;
+  const liquidation = shownColl !== undefined && shownDebt !== undefined && mcr !== undefined
+    ? liquidationPrice(shownColl, shownDebt, mcr)
+    : undefined;
+  const busy = tx.phase.phase === "awaiting_wallet" || tx.phase.phase === "confirming" || tx.phase.phase === "submitted";
+
+  async function borrowIfFresh() {
+    if (!oracle?.ok) {
+      setLocalError(oracle?.reason ?? "The BTC price is not available.");
+      return;
+    }
+    await borrow();
+  }
 
   return (
     <Card className="space-y-3">
       <div>
         <h2 className="text-lg font-semibold">Mezo trove</h2>
-        <p className="mt-1 text-sm text-muted">Borrow MUSD against BTC through BorrowerOperations, then fund this agreement with the existing approval.</p>
+        <p className="mt-1 text-sm text-muted">Borrow MUSD against BTC through BorrowerOperations, then fund this agreement with the existing approval. These figures are read from Mezo. RELAY does not invent a price.</p>
       </div>
       <dl className="grid grid-cols-2 gap-2 text-sm">
-        <div><dt className="text-faint">Collateral</dt><dd className="num font-semibold">{active ? btc(coll) : plan ? btc(plan.collateral) : "—"}</dd></div>
-        <div><dt className="text-faint">Debt</dt><dd className="num font-semibold">{active ? `${formatMusd(debt)} MUSD` : plan ? `${formatMusd(plan.totalDebt)} MUSD` : "—"}</dd></div>
+        <div><dt className="text-faint">BTC collateral</dt><dd className="num font-semibold">{btc(shownColl)}</dd></div>
+        <div><dt className="text-faint">MUSD debt</dt><dd className="num font-semibold">{shownDebt === undefined ? "—" : `${formatMusd(shownDebt)} MUSD`}</dd></div>
+        <div><dt className="text-faint">Current ratio</dt><dd className="num font-semibold">{percent(active ? currentRatio : undefined)}</dd></div>
+        <div><dt className="text-faint">Projected ratio</dt><dd className="num font-semibold">{percent(plan?.ratio)}</dd></div>
         <div><dt className="text-faint">BTC price</dt><dd className="num font-semibold">{usd(price)}</dd></div>
-        <div><dt className="text-faint">Collateral ratio</dt><dd className="num font-semibold">{percent(active ? currentRatio : plan?.ratio)}</dd></div>
-        <div><dt className="text-faint">Liquidation price</dt><dd className="num font-semibold">{usd(active && coll > 0n ? (debt * 110n * 10n ** 16n) / coll : liquidation)}</dd></div>
+        <div><dt className="text-faint">Liquidation price</dt><dd className="num font-semibold">{usd(liquidation)}</dd></div>
+        <div><dt className="text-faint">Borrowing fee</dt><dd className="num font-semibold">{typeof feeRead.data === "bigint" ? `${formatMusd(feeRead.data)} MUSD` : "—"}</dd></div>
+        <div><dt className="text-faint">Interest</dt><dd className="num font-semibold">{interest === undefined ? "The interest rate was not read." : `${(interest / 100).toFixed(2)}% per year`}</dd></div>
         <div><dt className="text-faint">Borrow</dt><dd className="num font-semibold">{plan ? `${formatMusd(plan.netMusd)} MUSD` : "—"}</dd></div>
       </dl>
+      <p className="text-sm text-muted">Mezo liquidates below {percent(mcr)}. Recovery mode is when the system ratio is under {percent(ccr)}. It is {recovery === undefined ? "unread" : recovery ? "on" : "off"} at the current price. RELAY will not borrow if the result would fall under its own {percent(RELAY_BORROW_FLOOR)} floor{ccr === RELAY_BORROW_FLOOR ? ", which matches Mezo's recovery threshold today" : ""}.</p>
+      {oracle && !oracle.ok ? <p className="text-sm text-warning">{oracle.reason}</p> : null}
       {shortfall === 0n ? <p className="text-sm text-muted">The MUSD balance covers this invoice. Borrow only if you still want a larger trove.</p> : null}
       {plan?.mode === "open" ? <p className="text-sm text-muted">A new trove must borrow at least the Mezo minimum, about {minNetDebt ? formatMusd(minNetDebt) : "—"} MUSD, not only this invoice.</p> : null}
       {plan && !plan.ok && plan.reason ? <p className="text-sm text-warning">{plan.reason}</p> : null}
@@ -189,8 +236,8 @@ export function TroveBorrowPanel({
       {nativeBalance !== undefined && nativeBalance <= GAS_RESERVE ? <p className="text-sm text-warning">Not enough BTC left for gas and collateral.</p> : null}
       <TxStatus phase={tx.phase} />
       <Button
-        disabled={!plan?.ok || !chainMatches || tx.phase.phase === "awaiting_wallet" || tx.phase.phase === "confirming" || tx.phase.phase === "submitted"}
-        onClick={() => void borrow().catch((error: unknown) => setLocalError(error instanceof Error ? error.message : "The trove transaction failed."))}
+        disabled={!plan?.ok || !oracle?.ok || !chainMatches || busy}
+        onClick={() => void borrowIfFresh().catch((error: unknown) => setLocalError(error instanceof Error ? error.message : "The trove transaction failed."))}
       >
         {plan?.mode === "open" ? "Open trove and borrow" : "Borrow the shortfall"}
       </Button>

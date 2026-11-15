@@ -40,4 +40,4 @@ export const FUNDS_DISCLOSURE =
   "The escrow contract holds the MUSD.";
 
 export const NO_FEE_DISCLOSURE =
-  "0.50% when the seller is paid on the current escrow. Refunds are whole. Older escrows charge nothing. Your wallet shows the BTC network fee.";
+  "0.50% when the seller is paid on the current escrow, on 0x50ab…cB793, and on 0xE881…753F. The three oldest escrows have no protocol fee. Refunds are whole. Your wallet shows the BTC network fee.";

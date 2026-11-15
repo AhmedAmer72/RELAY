@@ -60,7 +60,7 @@ export async function GET(request: Request, context: { params: Promise<{ escrowI
             borrowOrSwap: "https://testnet.mezo.org",
             borrowDocs: OFFICIAL_LINKS.borrow,
           },
-          note: "Sign approve, then sign fundEscrow or fundEscrowAsAgent. POST the signed transaction to settle. A direct MUSD transfer is not accepted.",
+          note: "This is RELAY escrow funding, not the official x402 exact scheme. Sign approve, then sign fundEscrow or fundEscrowAsAgent. POST the signed transaction to settle. A direct MUSD transfer is not accepted and does not fund the escrow.",
         },
       },
     ],
