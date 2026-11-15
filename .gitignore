@@ -20,3 +20,10 @@ test-results
 .e2e-local.json
 MEZO_LOOP_PROJECT_OVERVIEW.md
 data/
+
+# Platform-specific Impeccable engine. The launcher downloads a verified copy.
+.cursor/skills/impeccable/scripts/bin/
+
+# The repo-wide data/ ignore also matches this skill directory. Keep its font index.
+!.cursor/skills/impeccable/scripts/data/
+!.cursor/skills/impeccable/scripts/data/**
