@@ -7,7 +7,6 @@ import {
   type HTTPAdapter,
 } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { createPaywall, evmPaywall } from "@x402/paywall";
 import { VERIFIED_TESTNET } from "@/lib/chain/config";
 
 export const X402_NETWORK = "eip155:31611";
@@ -84,7 +83,6 @@ export async function instantPaymentResult(request: Request, payTo: Address, fac
       description: "RELAY instant MUSD payment. This does not fund an escrow.",
     },
   });
-  httpServer.registerPaywallProvider(createPaywall().withNetwork(evmPaywall).build());
   await httpServer.initialize();
   const adapter = new NextPaymentAdapter(request);
   const context = {
