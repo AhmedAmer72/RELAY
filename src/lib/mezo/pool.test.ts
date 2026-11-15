@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DELEGATED_TROVE } from "@/lib/mezo/delegated-trove";
-import { minimumOut, suggestBtcIn } from "@/lib/mezo/pool";
+import { minimumOut, suggestBtcIn, swapResultNote } from "@/lib/mezo/pool";
 
 describe("swap minimum", () => {
   it("rejects a zero quote and a 100% slippage setting", () => {
@@ -14,6 +14,12 @@ describe("swap minimum", () => {
     const min = minimumOut(quoted);
     expect(min).toBe(quoted - (quoted * 50n) / 10_000n);
     expect(min! >= 1n).toBe(true);
+  });
+
+  it("states the MUSD balance read after the swap", () => {
+    const note = swapResultNote(10n * 10n ** 18n, 25n * 10n ** 18n);
+    expect(note).toContain("was 10.00");
+    expect(note).toContain("is now 25.00");
   });
 
   it("suggests a BTC input that stays inside the reserves", () => {

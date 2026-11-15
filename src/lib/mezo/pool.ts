@@ -1,5 +1,6 @@
 import { getAddress, type Address } from "viem";
 import { VERIFIED_TESTNET } from "@/lib/chain/config";
+import { formatMusd } from "@/lib/escrow/format";
 import { MEZO_TESTNET_SYSTEM } from "@/lib/mezo/system";
 
 export const SWAP_SLIPPAGE_BPS = 50n;
@@ -34,6 +35,10 @@ export function suggestBtcIn(shortfall: bigint, reserveMusd: bigint, reserveBtc:
   const numerator = reserveBtc * shortfall * 10_000n;
   const denominator = (reserveMusd - shortfall) * withFee;
   return numerator / denominator + 1n;
+}
+
+export function swapResultNote(before: bigint, after: bigint) {
+  return `The swap receipt succeeded. Funding was not sent. MUSD balance was ${formatMusd(before)} and is now ${formatMusd(after)}.`;
 }
 
 export function minimumOut(quoted: bigint, slippageBps = SWAP_SLIPPAGE_BPS) {

@@ -9,7 +9,7 @@ import { useTrackedTx } from "@/hooks/use-tx";
 import { VERIFIED_TESTNET } from "@/lib/chain/config";
 import { erc20Abi } from "@/lib/contracts/erc20";
 import { formatMusd } from "@/lib/escrow/format";
-import { btcToMusdRoute, minimumOut, poolMatchesMusdBtc, suggestBtcIn, SWAP_DEADLINE_SECONDS } from "@/lib/mezo/pool";
+import { btcToMusdRoute, minimumOut, poolMatchesMusdBtc, suggestBtcIn, SWAP_DEADLINE_SECONDS, swapResultNote } from "@/lib/mezo/pool";
 import { MEZO_TESTNET_SYSTEM, poolPairAbi, poolRouterAbi } from "@/lib/mezo/system";
 
 export function SwapToMusdPanel({
@@ -131,7 +131,13 @@ export function SwapToMusdPanel({
       await onSwapped();
       await btcBalance.refetch();
     });
-    setNote(`The swap receipt succeeded. Funding is a separate transaction. The MUSD balance before this swap was ${formatMusd(before)} MUSD. If funding does not go through, use the balance now shown above.`);
+    const after = musd ? await client.readContract({
+      address: musd,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [account],
+    }) : before;
+    setNote(`${swapResultNote(before, after)} Use that balance to fund. The swap did not call the escrow.`);
   }
 
   return (
