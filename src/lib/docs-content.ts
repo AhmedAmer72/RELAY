@@ -111,6 +111,17 @@ export const DOC_SECTIONS = [
     ],
   },
   {
+    id: "mezo",
+    title: "Mezo borrow and the Stability Pool",
+    lead: "Checkout can borrow MUSD from Mezo before funding, and a seller can park a payout in the Stability Pool. Those balances are not the escrow balance.",
+    points: [
+      "BorrowerOperations on Mezo Testnet is 0xCdF7028ceAB81fA0C6971208e83fa7872994beE5. Checkout can open a trove, add collateral and borrow, or withdraw MUSD from an existing trove.",
+      "A new trove must borrow at least Mezo's minimum debt. The button stays off when the resulting collateral ratio would fall below 150%. The panel shows BTC collateral, debt, the BTC price, the collateral ratio, and an estimated liquidation price.",
+      "The Stability Pool is 0x1CCA7E410eE41739792eA0A24e00349Dd247680e. After a seller payout, the receipt can deposit that wallet's own MUSD, read the compounded deposit, withdraw it, and show BTC gained from liquidations.",
+      "Repaying or closing the connected wallet's trove uses that wallet's MUSD. It does not move tokens held by the escrow.",
+    ],
+  },
+  {
     id: "x402",
     title: "Machine-readable checkout",
     lead: "Another app can read the invoice, ask its own wallet to sign, and POST that signed transaction here. RELAY broadcasts it and accepts it only after the receipt.",
@@ -156,5 +167,5 @@ export const DOC_LIMITATIONS = [
   "Tokens sent directly to the contract are not credited and cannot be rescued. There is no admin withdrawal.",
   "Mainnet is not enabled. This app transacts on Mezo Testnet, chain 31611, or on a local Hardhat chain.",
   "Gas is BTC. Testnet MUSD is borrowed. The faucet dispenses testnet BTC, not MUSD.",
-  "Older escrow deployments stay readable. They do not gain split settlement or agent budgets after they are deployed.",
+  "Older escrow deployments stay readable at their original addresses. A new checkout is created on the current escrow. An older deployment does not gain functions that were not in its bytecode.",
 ] as const;

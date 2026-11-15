@@ -1,0 +1,11 @@
+{
+  "escrow": "0x7b31489D0da4b745E26689647FC1514071De3fD4",
+  "release": "0xffac7be42e45fa4da98d62f3b8d2a7a67ffb40caffb6d98ddad4d8c161817f73",
+  "releaseFee": "20000000000000000",
+  "releaseNet": "3980000000000000000",
+  "split": "0x1b1b90b6e525e42e5c2bb02e3a3a7723db97cc80a4a9f44fb912ec6eb1db8350",
+  "stabilityDeposit": "0x233087f5279ac8f60ec0e834639ac8037aae1af9d8ed7c0d6286210d95a5dcfc",
+  "stabilityWithdraw": "0x640c48adf92b94bb718eb6331e406283c67997ce8b4f8cffd0f30bb306ebab75",
+  "refund": "0xdfe8ab2cddb16c3efcec815ea39d3730c9fd8ac212b7f655b6cf785fee365f5a",
+  "recordedAt": "2026-11-15T04:25:23.804Z"
+}

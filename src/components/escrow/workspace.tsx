@@ -385,7 +385,7 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
             <EscrowLinks id={model.id} />
           </div>
         </div>
-        <AgreementCard model={model} now={protocol.now} />
+        <AgreementCard model={model} now={protocol.now} feeBps={feeBps} />
         <Card className="space-y-3">
           <h2 className="text-lg font-semibold">Dispute settlement</h2>
           <p className="text-sm text-muted">Only the named resolver, after a dispute.</p>

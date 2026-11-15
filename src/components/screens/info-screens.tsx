@@ -5,7 +5,8 @@ import { addAppChain, OFFICIAL_LINKS, VERIFIED_TESTNET, explorerAddressUrl, getA
 import { APP_VERSION } from "@/lib/version";
 import { AUTO_RELEASE_DISCLOSURE, RESOLVER_DISCLOSURE } from "@/lib/escrow/constants";
 import { useState, type ReactNode } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import { relayEscrowAbi } from "@/lib/contracts/relayEscrowAbi";
 import { shortAddress } from "@/lib/escrow/format";
 import Link from "next/link";
 import { AgentBudgetPanel } from "@/components/screens/agent-budget";
@@ -76,6 +77,14 @@ export function SettingsScreen() {
   const musd = getMusdConfig();
   const escrowUrl = explorerAddressUrl(escrow.address);
   const musdUrl = explorerAddressUrl(musd.address);
+  const feeRead = useReadContract({
+    address: escrow.address,
+    abi: relayEscrowAbi,
+    functionName: "feeBps",
+    chainId: chain.id,
+    query: { enabled: Boolean(escrow.address), retry: false },
+  });
+  const feeBps = typeof feeRead.data === "bigint" ? feeRead.data : undefined;
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -99,6 +108,9 @@ export function SettingsScreen() {
         <Row label="Gas token" value={`${chain.nativeCurrency.symbol}, ${chain.nativeCurrency.decimals} decimals`} />
         <Row label="MUSD" value={musd.address ?? musd.error ?? "Missing"} />
         <Row label="Escrow" value={escrow.address ?? escrow.error ?? "Not configured"} />
+        <Row label="New checkouts" value="Created on the escrow address above." />
+        <Row label="Seller fee" value={feeRead.isError ? "This deployment does not expose feeBps(). Treat that as no seller fee." : feeBps === undefined ? "Reading the contract…" : feeBps === 0n ? "This deployment charges no seller fee." : `${(Number(feeBps) / 100).toFixed(2)}% of a seller payout. Refunds are whole. BTC gas is separate.`} />
+        <Row label="Earlier escrows" value={VERIFIED_TESTNET.priorEscrows.join(", ")} />
         <Row label="App version" value={APP_VERSION} />
       </Card>
       <Card>

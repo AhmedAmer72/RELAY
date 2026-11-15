@@ -80,8 +80,10 @@ export function DeadlineRow({ label, seconds, now }: { label: string; seconds?: 
   );
 }
 
-export function AgreementCard({ model, now }: { model: EscrowModel; now?: number }) {
+export function AgreementCard({ model, now, feeBps = 0n }: { model: EscrowModel; now?: number; feeBps?: bigint }) {
   const metadata = model.metadata;
+  const fee = model.amount * feeBps / 10_000n;
+  const net = model.amount - fee;
   return (
     <Card className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -93,6 +95,18 @@ export function AgreementCard({ model, now }: { model: EscrowModel; now?: number
         <StatusBadge state={model.state} />
       </div>
       <p className="num display text-4xl leading-none">{formatMusd(model.amount)} <span className="font-sans text-lg font-medium tracking-normal text-muted">MUSD</span></p>
+      <div className="space-y-1 text-sm text-muted">
+        <p>Gross amount in escrow: <span className="num text-ink">{formatMusd(model.amount)} MUSD</span></p>
+        {feeBps > 0n ? (
+          <>
+            <p>Seller fee if the seller is paid: <span className="num text-ink">{formatMusd(fee)} MUSD ({(Number(feeBps) / 100).toFixed(2)}%)</span></p>
+            <p>Seller receives: <span className="num text-ink">{formatMusd(net)} MUSD</span></p>
+            <p>A refund returns the full {formatMusd(model.amount)} MUSD. The wallet still shows a separate BTC network fee.</p>
+          </>
+        ) : (
+          <p>This deployment charges no seller fee. The wallet still shows the BTC network fee.</p>
+        )}
+      </div>
       <p className="text-sm text-muted">{FUNDS_DISCLOSURE}</p>
       <ProgressRail state={model.state} />
       {metadata ? (
