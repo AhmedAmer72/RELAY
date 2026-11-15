@@ -13,8 +13,8 @@ This repository was specified as MEZO LOOP / LoopGuard and is shipped as RELAY. 
 | | |
 | --- | --- |
 | Network | Mezo Testnet, chain ID 31611 |
-| Current escrow | [`0x7b31489D0da4b745E26689647FC1514071De3fD4`](https://explorer.test.mezo.org/address/0x7b31489D0da4b745E26689647FC1514071De3fD4) |
-| Deployment block | 16656468 |
+| Current escrow | [`0x069eef42fb0BaffFfFdCd7755e6e21E37299365d`](https://explorer.test.mezo.org/address/0x069eef42fb0BaffFfFdCd7755e6e21E37299365d) |
+| Deployment block | 16791508 |
 | Asset | MUSD, 18 decimals, Mezo Testnet only |
 | Mainnet | Disabled. The deploy script refuses chain ID 31612. |
 | Audit | This software has not been independently audited. Tests are not an audit. |
@@ -24,7 +24,8 @@ New checkouts are created on the current escrow. That deployment supports split 
 
 | Contract | Block | What it can do |
 | --- | --- | --- |
-| `0x7b31489D0da4b745E26689647FC1514071De3fD4` | 16656468 | Current. Milestone gate, resolver acceptance, dispute-only resolver fee, review extension, mutual cancel, and delivery agents. |
+| `0x069eef42fb0BaffFfFdCd7755e6e21E37299365d` | 16791508 | Current. One-confirmation Permit2 funding, plus every rule from the previous escrow. |
+| `0x7b31489D0da4b745E26689647FC1514071De3fD4` | 16656468 | Previous. Milestone gate, resolver acceptance, dispute-only resolver fee, review extension, mutual cancel, and delivery agents. No Permit2 funding. |
 | `0x50ab19e57dff6f2De6e8f3A17EF96417f39cB793` | 16655754 | Mutual cancel, delivery agents, 0.50% seller fee, split settlement, and agent budgets. |
 | `0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F` | 16652687 | 0.50% seller fee, split settlement, and agent budgets. No mutual cancel and no delivery agents. |
 | `0x22535C947Fd951bbC6C03f8D8A1159ad3a159c46` | 16369215 | Split settlement and agent budgets. No protocol fee. |
@@ -39,7 +40,7 @@ Wave 1 already had partial dispute settlement, milestone checkouts of two to fiv
 
 This resubmission adds the Mezo depth that was still open, and each new chain action below has a receipt:
 
-- The fee escrow `0xE8814DC8…753F` charges 0.50% only when the seller is paid. Refunds stay whole. Its source is an exact [Sourcify match](https://repo.sourcify.dev/contracts/full_match/31611/0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F/). The same 0.50% seller fee is on the current escrow `0x7b31489D…3fD4`, whose source is an exact [Sourcify match](https://repo.sourcify.dev/contracts/full_match/31611/0x7b31489D0da4b745E26689647FC1514071De3fD4/). `feeBps()` on that contract returns 50. The recipient is `0x39B6fd99d31A67475911D9d763B0Bd8323f99685`.
+- The fee escrow `0xE8814DC8…753F` charges 0.50% only when the seller is paid. Refunds stay whole. Its source is an exact [Sourcify match](https://repo.sourcify.dev/contracts/full_match/31611/0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F/). The same 0.50% seller fee is on the current escrow `0x069eef…365d`, whose source is an exact [Sourcify match](https://repo.sourcify.dev/contracts/full_match/31611/0x069eef42fb0BaffFfFdCd7755e6e21E37299365d/). The Blockscout HTTP API did not return a verification record for that address when this was checked. `feeBps()` on that contract returns 50. The recipient is `0x39B6fd99d31A67475911D9d763B0Bd8323f99685`.
 - Checkout can borrow MUSD from an existing Mezo trove through `BorrowerOperations`, then fund. The borrow stays off when the resulting collateral ratio would fall below 150%.
 - The seller receipt can deposit a payout in the Stability Pool at `0x1CCA7E410eE41739792eA0A24e00349Dd247680e`, and withdraw that wallet's own compounded deposit with `withdrawFromSP`. One withdrawal of 1 MUSD returned to the seller that had deposited: [`0x3413d5a9f8af88726573888b29e8bfefd1ebb0304caa91a9cda76715c4d10443`](https://explorer.test.mezo.org/tx/0x3413d5a9f8af88726573888b29e8bfefd1ebb0304caa91a9cda76715c4d10443). The pool deposit was zero afterward. Escrow balances were not moved.
 - Activity is read in chunks from the first escrow block, 16358867, through the latest block. A failed chunk stays an error with retry. It is not shown as an empty history.
@@ -55,7 +56,7 @@ The current escrow adds two settlement paths that the previous fee escrow does n
 - A delivery file is stored by its CIDv1. It is described as pinned only after Pinata or a configured IPFS API accepts it.
 - `/fees` sums indexed seller fees. `/dashboard` lists deadlines inside 24 hours. Sellers can save a signed draft on this host. Activity is served from an index that starts at block 16358867, and new events can be posted to an https webhook.
 
-Source match for the current escrow: [Sourcify full match](https://repo.sourcify.dev/contracts/full_match/31611/0x7b31489D0da4b745E26689647FC1514071De3fD4/).
+Source match for the current escrow: [Sourcify full match](https://repo.sourcify.dev/contracts/full_match/31611/0x069eef42fb0BaffFfFdCd7755e6e21E37299365d/).
 
 ## Deal rules
 
@@ -198,7 +199,7 @@ Agreement text, delivery notes, and dispute reasons are stored on the contract a
 
 ## Network
 
-Checked on 25 October 2026 against the live testnet RPC and the official docs:
+Checked on 15 November 2026 against the live testnet RPC and the official docs:
 
 - [Developer environment](https://mezo.org/docs/developers/getting-started/configure-environment/)
 - [Contracts and token addresses](https://mezo.org/docs/users/resources/contracts-reference/)
@@ -208,6 +209,7 @@ Checked on 25 October 2026 against the live testnet RPC and the official docs:
 | --- | --- | --- |
 | Chain ID | 31611 | 31612 |
 | RPC | `https://rpc.test.mezo.org` | Not used by this app |
+| Websocket | `wss://rpc-ws.test.mezo.org` | Not used by this app |
 | Gas token | BTC, 18 decimals | BTC, 18 decimals |
 | Explorer | `https://explorer.test.mezo.org` | `https://explorer.mezo.org` |
 | MUSD | `0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503` | `0xdD468A1DDc392dcdbEf6db6e34E89AA338F9F186` |
@@ -216,7 +218,7 @@ On-chain reads of the testnet token returned name `Mezo USD`, symbol `MUSD`, and
 
 Mainnet addresses are listed so they are not pasted into the testnet app by mistake. This app does not add Mezo Mainnet.
 
-Testnet MUSD is borrowed against testnet BTC, or swapped from testnet BTC in the [Mezo testnet app](https://testnet.mezo.org). It is not dispensed by the faucet. The faucet dispenses testnet BTC. The official quickstart has described a minimum borrow; re-check that page before a demo, because the minimum can change.
+Testnet MUSD is borrowed against testnet BTC, or swapped inside checkout through the testnet basic router. It is not dispensed by the faucet. The faucet dispenses testnet BTC. A new trove borrows at least 1,800 MUSD of principal plus the 200 MUSD gas deposit, about 2,000 MUSD of debt. Checkout reads the current minimum from `minNetDebt`.
 
 1. Request testnet BTC from [the faucet](https://faucet.test.mezo.org/).
 2. Borrow or swap into MUSD at [testnet.mezo.org](https://testnet.mezo.org) while the wallet is on Mezo Testnet.
@@ -359,7 +361,7 @@ Keep the recording under 2 minutes and 15 seconds.
 1. Open a checkout and show the Mezo trove health: collateral, debt, BTC price, collateral ratio, and liquidation price.
 2. Fund the agreement, or borrow the shortfall from `BorrowerOperations` and then fund.
 3. Show one seller payout and the 0.50% line. A refund stays whole.
-4. Show the explorer page for the escrow at `0x7b31489D0da4b745E26689647FC1514071De3fD4`. Source match: [Sourcify full match](https://repo.sourcify.dev/contracts/full_match/31611/0x7b31489D0da4b745E26689647FC1514071De3fD4/).
+4. Show the explorer page for the escrow at `0x069eef42fb0BaffFfFdCd7755e6e21E37299365d`. Source match: [Sourcify full match](https://repo.sourcify.dev/contracts/full_match/31611/0x069eef42fb0BaffFfFdCd7755e6e21E37299365d/).
 
 On-chain receipts from 8 November 2026. Each row names the contract that actually received the transaction. Hashes are not moved onto a later escrow.
 

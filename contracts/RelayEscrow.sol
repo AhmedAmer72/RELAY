@@ -98,8 +98,22 @@ contract RelayEscrow is ReentrancyGuard {
     uint256 public constant FEE_BPS = 50;
     uint256 private constant FEE_DENOMINATOR = 10_000;
 
+    struct PermitDetails {
+        address token;
+        uint160 amount;
+        uint48 expiration;
+        uint48 nonce;
+    }
+
+    struct PermitSingle {
+        PermitDetails details;
+        address spender;
+        uint256 sigDeadline;
+    }
+
     IERC20 public immutable musdToken;
     address public immutable feeRecipient;
+    address public immutable permit2;
 
     uint256 public nextEscrowId = 1;
     mapping(uint256 => Escrow) private _escrows;
@@ -179,11 +193,18 @@ contract RelayEscrow is ReentrancyGuard {
     error ResolverNotAccepted();
     error ResolverFee();
 
-    constructor(address musd, address recipient) {
+    constructor(address musd, address recipient, address permit2_) {
         if (musd == address(0) || musd.code.length == 0) revert InvalidAddress();
         if (recipient == address(0) || recipient == address(this)) revert InvalidAddress();
+        if (permit2_ == address(0) || permit2_.code.length == 0) revert InvalidAddress();
         musdToken = IERC20(musd);
         feeRecipient = recipient;
+        permit2 = permit2_;
+    }
+
+    /// @notice This deployment can fund from a Permit2 signature. Older deployments do not have this function.
+    function permitFundingSupported() external pure returns (bool) {
+        return true;
     }
 
     /// @notice Protocol fee in basis points. 50 means 0.50% of a seller payout. Refunds are not charged.
@@ -277,27 +298,59 @@ contract RelayEscrow is ReentrancyGuard {
     /// @notice Pull the exact MUSD amount into this contract. A restricted buyer cannot be replaced.
     function fundEscrow(uint256 escrowId) external nonReentrant {
         Escrow storage escrow = _load(escrowId);
+        _pullAndMarkFunded(escrow, escrowId, msg.sender, false);
+    }
+
+    /// @notice Fund with one transaction. The buyer signs a Permit2 allowance, then this call consumes it.
+    /// @dev The token must already allow the canonical Permit2 contract. This does not approve the escrow itself.
+    function fundWithPermit2(uint256 escrowId, PermitSingle calldata permitSingle, bytes calldata signature) external nonReentrant {
+        Escrow storage escrow = _load(escrowId);
+        if (permitSingle.spender != address(this) || permitSingle.details.token != address(musdToken)) revert InvalidAddress();
+        if (permitSingle.details.amount < escrow.amount) revert UnexpectedTokenAmount();
+        if (permitSingle.sigDeadline < block.timestamp) revert FundingClosed();
+        (bool permitted, ) = permit2.call(abi.encodeWithSignature(
+            "permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)",
+            msg.sender,
+            permitSingle,
+            signature
+        ));
+        if (!permitted) revert UnexpectedTokenAmount();
+        _pullAndMarkFunded(escrow, escrowId, msg.sender, true);
+    }
+
+    function _pullAndMarkFunded(Escrow storage escrow, uint256 escrowId, address payer, bool usePermit2) private {
         if (escrow.state != State.Created) revert InvalidState();
         if (block.timestamp > escrow.fundingDeadline) revert FundingClosed();
 
         if (escrow.buyer != address(0)) {
-            if (msg.sender != escrow.buyer) revert NotBuyer();
+            if (payer != escrow.buyer) revert NotBuyer();
             _requireFundable(escrow, escrowId);
         } else {
-            if (msg.sender == escrow.seller) revert BuyerIsSeller();
-            if (msg.sender == escrow.resolver) revert ResolverIsParty();
+            if (payer == escrow.seller) revert BuyerIsSeller();
+            if (payer == escrow.resolver) revert ResolverIsParty();
             _requireFundable(escrow, escrowId);
-            escrow.buyer = msg.sender;
+            escrow.buyer = payer;
         }
 
         uint256 amount = escrow.amount;
         escrow.state = State.Funded;
 
         uint256 beforeBal = musdToken.balanceOf(address(this));
-        musdToken.safeTransferFrom(msg.sender, address(this), amount);
+        if (usePermit2) {
+            (bool moved, ) = permit2.call(abi.encodeWithSignature(
+                "transferFrom(address,address,uint160,address)",
+                payer,
+                address(this),
+                uint160(amount),
+                address(musdToken)
+            ));
+            if (!moved) revert UnexpectedTokenAmount();
+        } else {
+            musdToken.safeTransferFrom(payer, address(this), amount);
+        }
         if (musdToken.balanceOf(address(this)) - beforeBal != amount) revert UnexpectedTokenAmount();
 
-        emit EscrowFunded(escrowId, msg.sender, amount);
+        emit EscrowFunded(escrowId, payer, amount);
     }
 
     /// @notice Replace the remaining MUSD this caller allows `agent` to fund on agreements that name the caller as buyer.

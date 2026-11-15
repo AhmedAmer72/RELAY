@@ -52,13 +52,15 @@ async function deployFixture() {
   const [seller, buyer, resolver, outsider, donor] = await ethers.getSigners();
   const musd = await ethers.deployContract("MockMUSD");
   await musd.waitForDeployment();
-  const escrow = await ethers.deployContract("RelayEscrow", [await musd.getAddress(), donor.address]);
+  const permit2 = await ethers.deployContract("MockPermit2");
+  await permit2.waitForDeployment();
+  const escrow = await ethers.deployContract("RelayEscrow", [await musd.getAddress(), donor.address, await permit2.getAddress()]);
   await escrow.waitForDeployment();
   const amount = ethers.parseEther("50");
   await musd.mint(buyer.address, ethers.parseEther("1000"));
   await musd.mint(outsider.address, ethers.parseEther("1000"));
   await musd.mint(seller.address, ethers.parseEther("1000"));
-  return { seller, buyer, resolver, outsider, donor, musd, escrow, amount };
+  return { seller, buyer, resolver, outsider, donor, musd, permit2, escrow, amount };
 }
 
 async function createAgreement(
@@ -181,8 +183,10 @@ describe("RelayEscrow", function () {
     await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, hashText("other"), meta.metadata, 0, 0)).to.be.revertedWithCustomError(escrow, "HashMismatch");
     await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, meta.metadataHash, "", 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidMetadata");
     await expect(escrow.connect(seller).createEscrow(buyer.address, resolver.address, amount, funding, delivery, MIN_REVIEW, meta.termsHash, hashText("x".repeat(2049)), "x".repeat(2049), 0, 0)).to.be.revertedWithCustomError(escrow, "InvalidMetadata");
-    await expect(ethers.deployContract("RelayEscrow", [ethers.ZeroAddress, outsider.address])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
-    await expect(ethers.deployContract("RelayEscrow", [await musd.getAddress(), ethers.ZeroAddress])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    const permit2Address = await (await ethers.deployContract("MockPermit2")).getAddress();
+    await expect(ethers.deployContract("RelayEscrow", [ethers.ZeroAddress, outsider.address, permit2Address])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    await expect(ethers.deployContract("RelayEscrow", [await musd.getAddress(), ethers.ZeroAddress, permit2Address])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
+    await expect(ethers.deployContract("RelayEscrow", [await musd.getAddress(), outsider.address, ethers.ZeroAddress])).to.be.revertedWithCustomError(escrow, "InvalidAddress");
     expect(await escrow.feeBps()).to.equal(50n);
     expect(await escrow.feeRecipient()).to.equal(donor.address);
     await expect(escrow.getEscrow(0)).to.be.revertedWithCustomError(escrow, "EscrowNotFound");
@@ -229,7 +233,8 @@ describe("RelayEscrow", function () {
 
     const fee = await ethers.deployContract("FeeOnTransferToken");
     await fee.waitForDeployment();
-    const feeEscrow = await ethers.deployContract("RelayEscrow", [await fee.getAddress(), outsider.address]);
+    const feePermit = await ethers.deployContract("MockPermit2");
+    const feeEscrow = await ethers.deployContract("RelayEscrow", [await fee.getAddress(), outsider.address, await feePermit.getAddress()]);
     await feeEscrow.waitForDeployment();
     await fee.mint(buyer.address, amount);
     const feeCreated = await createAgreement(feeEscrow, seller, resolver, buyer.address, amount);
@@ -530,7 +535,8 @@ describe("RelayEscrow", function () {
     const { seller, buyer, resolver, amount } = await deployFixture();
     const token = await ethers.deployContract("ReenteringToken");
     await token.waitForDeployment();
-    const escrow = await ethers.deployContract("RelayEscrow", [await token.getAddress(), seller.address]);
+    const reenterPermit = await ethers.deployContract("MockPermit2");
+    const escrow = await ethers.deployContract("RelayEscrow", [await token.getAddress(), seller.address, await reenterPermit.getAddress()]);
     await escrow.waitForDeployment();
     await token.setEscrow(await escrow.getAddress());
     await token.mint(buyer.address, amount);
@@ -809,5 +815,62 @@ describe("RelayEscrow", function () {
       [ethers.parseEther("1"), amount - ethers.parseEther("1")],
     );
     expect((await escrow.getEscrow(secondId)).state).to.equal(STATE.Refunded);
+  });
+
+  it("funds from a Permit2 signature and rejects a bad or short permit", async function () {
+    const { escrow, seller, buyer, resolver, musd, permit2, amount } = await deployFixture();
+    const created = await createAgreement(escrow, seller, resolver, buyer.address, amount);
+    await escrow.connect(buyer).acceptResolver(created.id);
+    expect(await musd.allowance(buyer.address, await escrow.getAddress())).to.equal(0n);
+    await musd.connect(buyer).approve(await permit2.getAddress(), amount);
+
+    const deadline = BigInt(await time.latest()) + 3600n;
+    const permitSingle = {
+      details: { token: await musd.getAddress(), amount, expiration: 0, nonce: 0 },
+      spender: await escrow.getAddress(),
+      sigDeadline: deadline,
+    };
+    const signature = await buyer.signTypedData(
+      { name: "Permit2", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await permit2.getAddress() },
+      {
+        PermitSingle: [
+          { name: "details", type: "PermitDetails" },
+          { name: "spender", type: "address" },
+          { name: "sigDeadline", type: "uint256" },
+        ],
+        PermitDetails: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint160" },
+          { name: "expiration", type: "uint48" },
+          { name: "nonce", type: "uint48" },
+        ],
+      },
+      permitSingle,
+    );
+
+    await expect(escrow.connect(buyer).fundWithPermit2(created.id, { ...permitSingle, details: { ...permitSingle.details, amount: amount - 1n } }, signature)).to.be.revertedWithCustomError(escrow, "UnexpectedTokenAmount");
+    const bad = await resolver.signTypedData(
+      { name: "Permit2", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await permit2.getAddress() },
+      {
+        PermitSingle: [
+          { name: "details", type: "PermitDetails" },
+          { name: "spender", type: "address" },
+          { name: "sigDeadline", type: "uint256" },
+        ],
+        PermitDetails: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint160" },
+          { name: "expiration", type: "uint48" },
+          { name: "nonce", type: "uint48" },
+        ],
+      },
+      permitSingle,
+    );
+    await expect(escrow.connect(buyer).fundWithPermit2(created.id, permitSingle, bad)).to.be.revertedWithCustomError(escrow, "UnexpectedTokenAmount");
+    await expect(escrow.connect(buyer).fundWithPermit2(created.id, permitSingle, signature)).to.emit(escrow, "EscrowFunded");
+    expect((await escrow.getEscrow(created.id)).state).to.equal(STATE.Funded);
+    await expect(escrow.connect(buyer).fundWithPermit2(created.id, permitSingle, signature)).to.be.revertedWithCustomError(escrow, "UnexpectedTokenAmount");
+    await musd.connect(buyer).transfer(await escrow.getAddress(), 1n);
+    expect(await musd.balanceOf(await escrow.getAddress())).to.equal(amount + 1n);
   });
 });

@@ -2,7 +2,7 @@ import { getAddress, isAddress, type Address } from "viem";
 import { defineChain } from "viem";
 
 /**
- * Defaults were checked on 2026-10-25:
+ * Defaults were checked on 2026-11-15:
  * - https://mezo.org/docs/developers/getting-started/configure-environment/
  * - https://mezo.org/docs/users/resources/contracts-reference/
  * - eth_chainId, symbol(), name(), and decimals() on the testnet RPC
@@ -15,8 +15,8 @@ export const VERIFIED_TESTNET = {
   rpcUrl: "https://rpc.test.mezo.org",
   explorerUrl: "https://explorer.test.mezo.org",
   musd: getAddress("0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503"),
-  escrow: getAddress("0x7b31489D0da4b745E26689647FC1514071De3fD4"),
-  deployBlock: 16656468n,
+  escrow: getAddress("0x069eef42fb0BaffFfFdCd7755e6e21E37299365d"),
+  deployBlock: 16791508n,
   legacyEscrow: getAddress("0xcf6a53b0A22989Ad6B1834C7844CfB9B0d3A9125"),
   legacyDeployBlock: 16358867n,
   priorEscrows: [
@@ -25,6 +25,7 @@ export const VERIFIED_TESTNET = {
     getAddress("0x22535C947Fd951bbC6C03f8D8A1159ad3a159c46"),
     getAddress("0xE8814DC8a9d5c37beC6AeBD232815cEaeCAE753F"),
     getAddress("0x50ab19e57dff6f2De6e8f3A17EF96417f39cB793"),
+    getAddress("0x7b31489D0da4b745E26689647FC1514071De3fD4"),
   ],
   musdSymbol: "MUSD",
   musdDecimals: 18,

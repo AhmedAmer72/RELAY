@@ -38,7 +38,7 @@ export const DOC_SECTIONS = [
     title: "Fund",
     lead: "Funding is a two-step wallet flow when the current MUSD approval is below the agreement amount.",
     points: [
-      "The buyer approves the escrow contract to spend MUSD, then calls fund. The contract pulls the exact amount and rejects a token that delivers a different balance.",
+      "On the current escrow the buyer signs a Permit2 allowance and funds in that same transaction. Older escrows still use a separate approval. The contract pulls the exact amount and rejects a token that delivers a different balance.",
       "Funding is allowed at the funding deadline and is refused one second later.",
       "An open agreement has no buyer until the first successful fund. That funder is stored as the buyer.",
       "An agent can fund only when the agreement already names the buyer, the agent has a remaining budget, and the buyer has approved the escrow. The agent does not become the buyer.",

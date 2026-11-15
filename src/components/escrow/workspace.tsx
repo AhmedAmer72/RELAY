@@ -3,8 +3,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { formatUnits, type Hex } from "viem";
-import { useConnect, usePublicClient, useReadContract, useReadContracts, useSwitchChain, useWriteContract } from "wagmi";
+import { formatUnits, maxUint256, type Hex } from "viem";
+import { useConnect, usePublicClient, useReadContract, useReadContracts, useSignTypedData, useSwitchChain, useWriteContract } from "wagmi";
 import { explorerAddressUrl, escrowPath } from "@/lib/chain/config";
 import type { Address } from "viem";
 import { erc20Abi } from "@/lib/contracts/erc20";
@@ -17,8 +17,10 @@ import { validateEvidence, validateReason } from "@/lib/validation/actions";
 import { evaluateEscrow } from "@/lib/escrow/policy";
 import { panelFor, useChainEvents, useEscrow, useProtocol } from "@/hooks/use-escrow";
 import { useTrackedTx } from "@/hooks/use-tx";
+import { PERMIT2, permit2AllowanceAbi } from "@/lib/mezo/system";
 import { ActionPanel, AgreementCard, EscrowLinks, Timeline, TxStatus } from "@/components/escrow/views";
 import { TroveRepayPanel } from "@/components/escrow/repay-panel";
+import { EarnPanel } from "@/components/escrow/earn-panel";
 import { StabilityPanel } from "@/components/escrow/stability-panel";
 import { SwapToMusdPanel } from "@/components/escrow/swap-panel";
 import { TroveBorrowPanel } from "@/components/escrow/trove-panel";
@@ -26,6 +28,7 @@ import { Button, Card, CopyButton, Dialog, ErrorPanel, ExternalLink, Field, Skel
 
 const EXPECTED: Partial<Record<ActionId, EscrowState>> = {
   fund: "Funded",
+  "sign-and-fund": "Funded",
   "fund-as-agent": "Funded",
   "submit-delivery": "Delivered",
   "submit-as-agent": "Delivered",
@@ -56,6 +59,7 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
   const { connect, connectors } = useConnect();
   const { switchChain } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const { signTypedDataAsync } = useSignTypedData();
   const publicClient = usePublicClient({ chainId: protocol.chain.id });
   const [notice, setNotice] = useState<string>();
   const [confirming, setConfirming] = useState<ActionId>();
@@ -83,6 +87,30 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
     query: { enabled: Boolean(agreementContract), retry: false },
   });
   const feeBps = typeof feeRead.data === "bigint" ? feeRead.data : 0n;
+  const permitProbe = useReadContract({
+    address: agreementContract,
+    abi: relayEscrowAbi,
+    functionName: "permitFundingSupported",
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(agreementContract), retry: false },
+  });
+  const permit2Read = useReadContract({
+    address: PERMIT2,
+    abi: permit2AllowanceAbi,
+    functionName: "allowance",
+    args: wallet && protocol.musd.address && agreementContract ? [wallet, protocol.musd.address, agreementContract] : undefined,
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(permitProbe.data === true && wallet && protocol.musd.address && agreementContract) },
+  });
+  const tokenPermitRead = useReadContract({
+    address: protocol.musd.address,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: wallet ? [wallet, PERMIT2] : undefined,
+    chainId: protocol.chain.id,
+    query: { enabled: Boolean(permitProbe.data === true && wallet && protocol.musd.address) },
+  });
+  const permit2Allowance = typeof tokenPermitRead.data === "bigint" ? tokenPermitRead.data : undefined;
   const agentRead = useReadContract({
     address: agreementContract,
     abi: relayEscrowAbi,
@@ -161,6 +189,8 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
     reviewExtension: rules.data?.[3]?.status === "success",
     extensionProposer,
     extensionDeadline,
+    permitFunding: permitProbe.isSuccess && permitProbe.data === true,
+    permit2Allowance,
   };
   const panel = model ? panelFor(model, protocol, partialSettlement, agentAllowance, ruleExtra) : undefined;
   const checkoutPath = escrowPath("checkout", id, agreementContract);
@@ -272,6 +302,8 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
       symbol: protocol.symbol,
       balance,
       allowance,
+      permitFunding: permitProbe.isSuccess && permitProbe.data === true,
+      permit2Allowance,
       nativeBalance: protocol.nativeBalance,
       partialSettlement,
       agentAllowance: nextAgentAllowance,
@@ -297,6 +329,43 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
 
   async function submit(action: ActionId, extra?: { evidenceJson?: string; evidenceHash?: Hex; reason?: string; reasonHash?: Hex; sellerAmount?: bigint; extensionDeadline?: number }) {
     if (!model || !agreementContract) return;
+    if (action === "sign-and-fund") {
+      if (!protocol.musd.address || !wallet || !publicClient) return;
+      if (!(await preflight(action))) return;
+      const nonce = permit2Read.data ? Number(permit2Read.data[2]) : 0;
+      const sigDeadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
+      const details = { token: protocol.musd.address, amount: model.amount, expiration: Number(sigDeadline), nonce };
+      const signature = await signTypedDataAsync({
+        domain: { name: "Permit2", chainId: protocol.chain.id, verifyingContract: PERMIT2 },
+        types: {
+          PermitSingle: [
+            { name: "details", type: "PermitDetails" },
+            { name: "spender", type: "address" },
+            { name: "sigDeadline", type: "uint256" },
+          ],
+          PermitDetails: [
+            { name: "token", type: "address" },
+            { name: "amount", type: "uint160" },
+            { name: "expiration", type: "uint48" },
+            { name: "nonce", type: "uint48" },
+          ],
+        },
+        primaryType: "PermitSingle",
+        message: { details, spender: agreementContract, sigDeadline },
+      });
+      setVerified(undefined);
+      await tx.run("Sign and fund", () => writeContractAsync({
+        chainId: protocol.chain.id,
+        address: agreementContract,
+        abi: relayEscrowAbi,
+        functionName: "fundWithPermit2",
+        args: [model.id, { details, spender: agreementContract, sigDeadline }, signature],
+      }), async () => {
+        const fresh = await refreshModel();
+        setVerified(Boolean(fresh && fresh.state === "Funded"));
+      });
+      return;
+    }
     if (!(await preflight(action))) return;
     const call = buildCall(action, model, agreementContract, protocol.musd.address, extra);
     if (!call) return;
@@ -421,6 +490,9 @@ export function EscrowWorkspace({ id, variant, contract }: { id: bigint; variant
             proceeds={model.amount - (model.amount * feeBps / 10_000n)}
             balance={protocol.balance}
           />
+        ) : null}
+        {variant === "receipt" && wallet && sameAddress(model.seller, wallet) && (model.state === "Released" || model.state === "Split") ? (
+          <EarnPanel chainId={protocol.chain.id} account={wallet} />
         ) : null}
       </div>
       <div className="space-y-4">
@@ -624,6 +696,8 @@ function isActive(phase: string) {
 function confirmTitle(action?: ActionId) {
   switch (action) {
     case "approve": return "Approve MUSD";
+    case "allow-permit2": return "Allow Permit2";
+    case "sign-and-fund": return "Sign and fund";
     case "fund": return "Fund escrow";
     case "fund-as-agent": return "Fund with agent budget";
     case "propose-mutual": return "Propose a full refund";
@@ -646,6 +720,10 @@ function confirmBody(action: ActionId | undefined, amount: bigint) {
   switch (action) {
     case "approve":
       return `Approves exactly ${value} MUSD. Does not send it.`;
+    case "allow-permit2":
+      return "Lets the Permit2 contract move MUSD. The escrow is not approved.";
+    case "sign-and-fund":
+      return `Signs a Permit2 allowance and locks ${value} MUSD in one transaction.`;
     case "fund":
       return `Locks ${value} MUSD under this agreement.`;
     case "fund-as-agent":
@@ -689,6 +767,9 @@ function buildCall(
     case "approve":
       if (!musdAddress) return undefined;
       return { label: "Approve MUSD", address: musdAddress, abi: erc20Abi, functionName: "approve", args: [escrowAddress, model.amount] };
+    case "allow-permit2":
+      if (!musdAddress) return undefined;
+      return { label: "Allow Permit2", address: musdAddress, abi: erc20Abi, functionName: "approve", args: [PERMIT2, maxUint256] };
     case "fund":
       return { label: "Fund escrow", ...escrow, functionName: "fundEscrow", args: [model.id] };
     case "fund-as-agent":

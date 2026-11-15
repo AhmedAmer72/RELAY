@@ -145,6 +145,20 @@ export const stabilityPoolAbi = [
   ], outputs: [] },
 ] as const;
 
+export const PERMIT2 = getAddress("0x000000000022D473030F116dDEE9F6B43aC78BA3");
+
+export const permit2AllowanceAbi = [
+  { type: "function", name: "allowance", stateMutability: "view", inputs: [
+    { name: "owner", type: "address" },
+    { name: "token", type: "address" },
+    { name: "spender", type: "address" },
+  ], outputs: [
+    { name: "amount", type: "uint160" },
+    { name: "expiration", type: "uint48" },
+    { name: "nonce", type: "uint48" },
+  ] },
+] as const;
+
 export const TROVE_ACTIVE = 1;
 export const MIN_ICR = 150n * 10n ** 16n;
 export const LIQUIDATION_ICR = 110n * 10n ** 16n;

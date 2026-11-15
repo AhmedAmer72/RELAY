@@ -29,7 +29,7 @@ export const FAQ = [
   },
   {
     question: "Which wallets and network does this use?",
-    answer: "An injected wallet on Mezo Testnet, chain 31611. Gas is BTC. Mainnet is off. Testnet MUSD is borrowed, not dispensed by the faucet.",
+    answer: "A browser wallet, or Unisat, Xverse, or OKX when that extension exposes an Ethereum provider. The network is Mezo Testnet, chain 31611. Gas is BTC. Mainnet is off. Testnet MUSD is borrowed, not dispensed by the faucet.",
   },
   {
     question: "What fees are there?",

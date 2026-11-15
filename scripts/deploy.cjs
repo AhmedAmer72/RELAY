@@ -35,9 +35,15 @@ async function main() {
     throw new Error(`Refusing to deploy against unexpected token ${name} ${symbol} decimals=${decimals}.`);
   }
 
+  const permit2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+  const permit2Code = await hre.ethers.provider.getCode(permit2);
+  if (!permit2Code || permit2Code === "0x") {
+    throw new Error("Permit2 is not deployed on this network.");
+  }
+
   const [deployer] = await hre.ethers.getSigners();
   const factory = await hre.ethers.getContractFactory("RelayEscrow");
-  const escrow = await factory.deploy(musd, deployer.address);
+  const escrow = await factory.deploy(musd, deployer.address, permit2);
   const deployment = escrow.deploymentTransaction();
   await escrow.waitForDeployment();
   const address = await escrow.getAddress();
@@ -56,7 +62,8 @@ async function main() {
   const resolverAcceptance = await escrow.resolverAcceptanceSupported();
   const reviewExtension = await escrow.reviewExtensionSupported();
   const resolverFee = await escrow.resolverFeeSupported();
-  if (partialSettlement !== true || mutualCancel !== true || deliveryAgents !== true || milestoneGate !== true || resolverAcceptance !== true || reviewExtension !== true || resolverFee !== true || agentProbe !== 0n || feeBps !== 50n || feeRecipient.toLowerCase() !== deployer.address.toLowerCase()) {
+  const permitFunding = await escrow.permitFundingSupported();
+  if (partialSettlement !== true || mutualCancel !== true || deliveryAgents !== true || milestoneGate !== true || resolverAcceptance !== true || reviewExtension !== true || resolverFee !== true || permitFunding !== true || agentProbe !== 0n || feeBps !== 50n || feeRecipient.toLowerCase() !== deployer.address.toLowerCase()) {
     throw new Error("Deployed contract is missing a required rule.");
   }
 
@@ -80,6 +87,8 @@ async function main() {
     agentBudgets: true,
     feeBps: Number(feeBps),
     feeRecipient,
+    permit2,
+    permitFunding: true,
     deployer: receipt.from,
     deployTx: receipt.hash,
     blockNumber: receipt.blockNumber,
